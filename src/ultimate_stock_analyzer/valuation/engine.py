@@ -4,6 +4,7 @@ import math
 import statistics
 from dataclasses import dataclass, field
 from enum import StrEnum
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -75,8 +76,8 @@ class ValuationConfig:
                 str(model): float(weight)
                 for model, weight in policy_raw["weights"].items()
             }
-            if not weights or sum(weights.values()) <= 0:
-                raise ValueError(f"valuation family {family} has no positive model weights")
+            if not weights or any(weight <= 0 for weight in weights.values()):
+                raise ValueError(f"valuation family {family} must use positive model weights")
             self.policies[str(family)] = ValuationPolicy(
                 model_family=str(family),
                 weights=weights,
@@ -292,7 +293,7 @@ def margin_of_safety_score(margin: float) -> float:
         return anchors[0][1]
     if margin >= anchors[-1][0]:
         return anchors[-1][1]
-    for (left_x, left_y), (right_x, right_y) in zip(anchors, anchors[1:], strict=True):
+    for (left_x, left_y), (right_x, right_y) in pairwise(anchors):
         if left_x <= margin <= right_x:
             fraction = (margin - left_x) / (right_x - left_x)
             return left_y + fraction * (right_y - left_y)
