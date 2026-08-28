@@ -1,0 +1,22 @@
+version: "1.0.0"
+
+accounting_weights:
+  cash_conversion: 0.25
+  accruals: 0.25
+  fcf_conversion: 0.20
+  receivables_quality: 0.10
+  inventory_quality: 0.10
+  nonrecurring_quality: 0.10
+accounting_min_coverage: 0.60
+
+governance_weights:
+  board_independence_adequate: 0.18
+  audit_committee_present: 0.14
+  fiscal_council_present: 0.08
+  related_party_policy_present: 0.14
+  compensation_disclosure_adequate: 0.08
+  tag_along_adequate: 0.14
+  controller_voting_concentration: 0.12
+  free_float: 0.12
+governance_min_coverage: 0.60
+governance_min_official_share: 0.70
