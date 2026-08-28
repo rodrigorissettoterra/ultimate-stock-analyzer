@@ -1,0 +1,53 @@
+version: "1.3.0"
+min_coverage: 0.55
+min_confidence: 0.45
+
+# Coefficients describe the initial directional hypothesis for a HIGH/RISING factor relative to
+# its own history. They are not causal estimates and must be calibrated in M15/M16.
+profiles:
+  general_corporate:
+    sensitivities:
+      - {factor: selic, coefficient: -0.45, weight: 0.25, rationale: "Higher funding/discount rates generally pressure non-financial corporates."}
+      - {factor: inflation, coefficient: -0.25, weight: 0.15, rationale: "High inflation can pressure costs and uncertainty when pricing power is incomplete."}
+      - {factor: activity, coefficient: 0.55, weight: 0.30, rationale: "Stronger domestic activity generally supports demand."}
+      - {factor: unemployment, coefficient: -0.35, weight: 0.15, rationale: "Higher unemployment can weaken household demand and credit quality."}
+      - {factor: long_rates, coefficient: -0.45, weight: 0.15, rationale: "Higher long rates raise discount and financing pressure."}
+
+  banks:
+    sensitivities:
+      - {factor: selic, coefficient: 0.10, weight: 0.15, rationale: "Rate effects on bank margins and credit are mixed; initial coefficient is intentionally small."}
+      - {factor: activity, coefficient: 0.50, weight: 0.30, rationale: "Activity supports credit demand and borrower quality."}
+      - {factor: unemployment, coefficient: -0.55, weight: 0.25, rationale: "Higher unemployment tends to pressure household credit quality."}
+      - {factor: credit_growth, coefficient: 0.45, weight: 0.20, rationale: "Healthy credit expansion can support earnings, subject to underwriting quality."}
+      - {factor: inflation, coefficient: -0.15, weight: 0.10, rationale: "High inflation may worsen borrower affordability and uncertainty."}
+
+  insurance:
+    sensitivities:
+      - {factor: selic, coefficient: 0.30, weight: 0.25, rationale: "Higher rates can improve reinvestment income while effects vary by liabilities."}
+      - {factor: long_rates, coefficient: 0.25, weight: 0.25, rationale: "Long-rate effects depend on asset-liability duration; initial sign is modest."}
+      - {factor: activity, coefficient: 0.30, weight: 0.20, rationale: "Activity can support premium growth."}
+      - {factor: inflation, coefficient: -0.20, weight: 0.15, rationale: "Claims inflation can pressure underwriting if repricing lags."}
+      - {factor: unemployment, coefficient: -0.20, weight: 0.15, rationale: "Weak labor conditions can reduce discretionary coverage demand."}
+
+  utilities:
+    sensitivities:
+      - {factor: selic, coefficient: -0.50, weight: 0.30, rationale: "Capital-intensive utilities are sensitive to financing and discount rates."}
+      - {factor: long_rates, coefficient: -0.55, weight: 0.30, rationale: "Higher long rates can pressure highly duration-sensitive cash flows."}
+      - {factor: inflation, coefficient: -0.05, weight: 0.15, rationale: "Indexation can offset inflation, so the initial net sensitivity is near neutral."}
+      - {factor: activity, coefficient: 0.20, weight: 0.15, rationale: "Demand effects exist but are usually less cyclical than general corporates."}
+      - {factor: usd_brl, coefficient: -0.15, weight: 0.10, rationale: "FX can matter through equipment or foreign-currency liabilities."}
+
+  real_estate:
+    sensitivities:
+      - {factor: selic, coefficient: -0.70, weight: 0.35, rationale: "Higher rates pressure mortgage affordability, cap rates and financing."}
+      - {factor: long_rates, coefficient: -0.65, weight: 0.25, rationale: "Long rates affect cap rates and asset values."}
+      - {factor: activity, coefficient: 0.40, weight: 0.20, rationale: "Activity supports occupancy, sales and household income."}
+      - {factor: unemployment, coefficient: -0.35, weight: 0.10, rationale: "Labor weakness can pressure demand and delinquency."}
+      - {factor: inflation, coefficient: -0.10, weight: 0.10, rationale: "Indexation offers partial protection but construction costs can rise."}
+
+  commodity_exporter:
+    sensitivities:
+      - {factor: commodity_price, coefficient: 0.80, weight: 0.50, rationale: "The relevant commodity price is a primary revenue driver for exporters."}
+      - {factor: usd_brl, coefficient: 0.55, weight: 0.30, rationale: "BRL depreciation often supports BRL revenue for USD-linked exporters, net of costs/debt."}
+      - {factor: activity, coefficient: 0.20, weight: 0.10, rationale: "Domestic activity is secondary for globally priced exporters."}
+      - {factor: long_rates, coefficient: -0.20, weight: 0.10, rationale: "Financing/discount conditions still matter."}
