@@ -1,0 +1,21 @@
+version: "0.9.0"
+
+# RiskSafetyScore: 100 means more defensive relative to these transparent hypothesis anchors.
+risk_weights:
+  drawdown: 0.30
+  volatility: 0.20
+  cvar95: 0.20
+  downside_deviation: 0.15
+  worst_20d: 0.15
+risk_min_history: 126
+risk_min_confidence: 0.50
+
+# LiquidityScore: 100 means easier to trade under the observable market-liquidity proxies.
+liquidity_weights:
+  adtv: 0.35
+  trades: 0.20
+  spread: 0.20
+  continuity: 0.10
+  turnover: 0.15
+liquidity_min_history: 20
+liquidity_min_coverage: 0.60

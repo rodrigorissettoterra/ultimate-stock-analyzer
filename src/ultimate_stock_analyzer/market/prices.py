@@ -26,6 +26,8 @@ class PriceBar:
     quantity: int
     market_code: int = 10
     isin: str | None = None
+    best_bid: float | None = None
+    best_ask: float | None = None
     adjusted_close: float | None = None
     source: str = "B3_COTAHIST"
 
@@ -45,6 +47,11 @@ def _integer(text: str) -> int:
 
 def _price(text: str) -> float:
     return _integer(text) / 100.0
+
+
+def _optional_price(text: str) -> float | None:
+    value = _price(text)
+    return value if value > 0 else None
 
 
 def _yyyymmdd(text: str) -> date:
@@ -74,6 +81,8 @@ def parse_cotahist_line(line: str, *, spot_only: bool = True) -> PriceBar | None
         high=_price(record[69:82]),
         low=_price(record[82:95]),
         close=_price(record[108:121]),
+        best_bid=_optional_price(record[121:134]),
+        best_ask=_optional_price(record[134:147]),
         trades=_integer(record[147:152]),
         quantity=_integer(record[152:170]),
         volume=_price(record[170:188]),
@@ -114,7 +123,7 @@ def apply_adjusted_closes(
 @dataclass(slots=True)
 class B3CotahistCollector:
     timeout_seconds: float = 60.0
-    user_agent: str = "ultimate-stock-analyzer/0.8"
+    user_agent: str = "ultimate-stock-analyzer/0.9"
 
     def fetch_year(self, year: int, *, ticker: str | None = None) -> list[PriceBar]:
         current_year = datetime.now(UTC).year

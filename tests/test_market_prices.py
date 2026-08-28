@@ -54,6 +54,8 @@ def test_parse_cotahist_public_fixed_width_record() -> None:
     assert bar.high == 11.0
     assert bar.low == 9.5
     assert bar.close == 10.5
+    assert bar.best_bid == 10.45
+    assert bar.best_ask == 10.55
     assert bar.volume == 1_234_567.89
     assert bar.adjusted_close is None
     assert not bar.is_adjusted
