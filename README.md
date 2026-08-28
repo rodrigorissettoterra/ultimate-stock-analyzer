@@ -2,7 +2,7 @@
 
 An open, free-first and auditable research engine for Brazilian equities. The project separates **company quality**, **investment attractiveness at the current price**, and **entry timing**, combining deterministic financial calculations with LLM-assisted analysis of textual evidence.
 
-> **Status:** v0.1 foundation + executable scoring core. This is research software, not individualized investment advice and not a promise of future returns.
+> **Status:** v0.3 — foundation, CVM point-in-time ingestion/normalization and expanded fundamental metrics. This is research software, not individualized investment advice and not a promise of future returns.
 
 ## Design principles
 
@@ -16,22 +16,27 @@ An open, free-first and auditable research engine for Brazilian equities. The pr
 
 ## Current capabilities
 
-- Core financial formulas: margins, ROE, ROIC, leverage, FCF, CAGR and coverage ratios.
+- CVM issuer master using stable `CD_CVM` identity and FCA-based security records.
+- CVM DFP/ITR/FCA ingestion with document versions and receipt timestamps.
+- Point-in-time financial statement normalization that prevents future-information leakage.
+- Exact CVM fixed-account extraction with source-line lineage.
+- Broad deterministic metrics: growth, margins, ROE/ROA/ROIC/ROCE, liquidity, leverage, cash flow, payout sustainability, efficiency and cash conversion cycle.
+- General-corporate input contract with explicit bank/insurer exclusion pending sector models.
 - Dividend regularity profile over configurable windows.
 - Cross-sectional, sector-aware percentile scoring with configurable metric direction and weights.
 - Separate quality, valuation, entry, news, rental, liquidity, risk and confidence dimensions.
 - Deterministic composite scoring and red-flag blocking.
 - OpenAI-compatible news/event classifier with strict structured output and no numeric score calculation by the LLM.
-- CVM DFP/ITR public ZIP collector and Banco Central SGS collector.
+- Banco Central SGS collector.
 - FastAPI endpoints for health, scoring and ranking.
-- Synthetic end-to-end example and unit tests.
-- Executable free-source dividend screener (`ultimate-stock-analyzer screen-dividends`) using Fundamentus only as a fallback/cross-check adapter.
+- Synthetic end-to-end examples and deterministic unit tests.
+- Executable free-source dividend screener using Fundamentus only as a fallback/cross-check adapter.
 
 ## Quick start
 
 ```bash
 python -m venv .venv
-# Windows: .venv\\Scripts\\activate
+# Windows: .venv\Scripts\activate
 # Linux/macOS: source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
@@ -56,7 +61,8 @@ python examples/demo_ranking.py
 ```text
 src/ultimate_stock_analyzer/
   collectors/       public-source ingestion adapters
-  fundamentals/     deterministic financial formulas
+  normalization/    canonical point-in-time financial normalization
+  fundamentals/     deterministic formulas and CVM accounting contracts
   dividends/        dividend/JCP regularity analysis
   market/           entry and market-derived calculations
   news/             LLM-assisted event analysis
