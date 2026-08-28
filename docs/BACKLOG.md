@@ -11,8 +11,8 @@
 - **M8 Market/entry** — price history, momentum, valuation context, speculation risk. **DONE v0.8.**
 - **M9 Risk/liquidity** — downside risk, spreads/turnover/free float. **DONE v0.9.**
 - **M10 Accounting/governance** — quality, audit, governance and insider evidence. **DONE v1.0.**
-- **M11 Securities lending** — B3 loan rates, utilization and short pressure. **DONE v1.1 candidate.**
-- **M12 News/events + LLM** — dedupe, clustering, materiality and impact.
+- **M11 Securities lending** — B3 loan rates, utilization and short pressure. **DONE v1.1.**
+- **M12 News/events + LLM** — dedupe, clustering, materiality and impact. **DONE v1.2 candidate.**
 - **M13 Macro** — BCB/IBGE/Ipea and sector sensitivity.
 - **M14 Integrated score** — separate company quality, investment attractiveness and entry timing.
 - **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison.
