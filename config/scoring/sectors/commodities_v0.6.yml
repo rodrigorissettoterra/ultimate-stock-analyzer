@@ -1,0 +1,39 @@
+version: "0.6.0"
+model_family: "commodities_v1"
+peer_group_field: "peer_group"
+default_min_peer_count: 8
+min_coverage_for_ranking: 0.65
+min_confidence_for_ranking: 0.55
+
+category_weights:
+  profitability: 0.20
+  balance_sheet: 0.25
+  cash_flow_resilience: 0.25
+  cycle_resilience: 0.15
+  growth: 0.05
+  dividends: 0.10
+
+metrics:
+  - {name: roic_5y_median, category: profitability, weight: 0.35, direction: higher}
+  - {name: roe_5y_median, category: profitability, weight: 0.25, direction: higher}
+  - {name: ebitda_margin_5y_median, category: profitability, weight: 0.40, direction: higher}
+
+  - {name: net_debt_ebitda, category: balance_sheet, weight: 0.35, direction: lower}
+  - {name: cash_to_debt, category: balance_sheet, weight: 0.25, direction: higher}
+  - {name: interest_coverage, category: balance_sheet, weight: 0.25, direction: higher}
+  - {name: equity_ratio, category: balance_sheet, weight: 0.15, direction: higher}
+
+  - {name: fcf_margin_5y_median, category: cash_flow_resilience, weight: 0.35, direction: higher}
+  - {name: fcf_positive_years_5y, category: cash_flow_resilience, weight: 0.35, direction: higher}
+  - {name: cfo_to_capex_5y_median, category: cash_flow_resilience, weight: 0.30, direction: higher}
+
+  - {name: ebitda_margin_volatility_5y, category: cycle_resilience, weight: 0.35, direction: lower}
+  - {name: max_margin_drawdown_5y, category: cycle_resilience, weight: 0.35, direction: lower}
+  - {name: net_debt_ebitda_peak_5y, category: cycle_resilience, weight: 0.30, direction: lower}
+
+  - {name: revenue_cagr_5y, category: growth, weight: 0.55, direction: higher}
+  - {name: operating_cash_flow_cagr_5y, category: growth, weight: 0.45, direction: higher}
+
+  - {name: dividend_regularity, category: dividends, weight: 0.45, direction: higher}
+  - {name: dividend_sustainability, category: dividends, weight: 0.40, direction: higher}
+  - {name: dividend_cagr_5y, category: dividends, weight: 0.15, direction: higher}

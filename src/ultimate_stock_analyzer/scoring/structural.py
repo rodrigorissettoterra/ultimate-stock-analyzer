@@ -44,6 +44,10 @@ class StructuralScoreResult:
     confidence: float
     rankable: bool
     categories: dict[str, StructuralCategoryScore]
+    peer_group: str = ""
+    model_family: str = ""
+    model_id: str = ""
+    selection_reason: str = ""
     flags: tuple[str, ...] = ()
     model_version: str = ""
 
@@ -52,6 +56,7 @@ class StructuralScoringConfig:
     def __init__(self, raw: dict[str, Any]) -> None:
         self.version = str(raw["version"])
         self.model_family = str(raw.get("model_family", "general_corporate_v1"))
+        self.peer_group_field = str(raw.get("peer_group_field", "sector"))
         self.default_min_peer_count = int(raw.get("default_min_peer_count", 8))
         self.min_coverage_for_ranking = float(raw.get("min_coverage_for_ranking", 0.65))
         self.min_confidence_for_ranking = float(raw.get("min_confidence_for_ranking", 0.55))
@@ -110,21 +115,31 @@ class StructuralScoringEngine:
         self.config = config
 
     def score_universe(self, rows: list[dict[str, Any]]) -> list[StructuralScoreResult]:
-        by_sector: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        by_peer_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
-            by_sector[str(row["sector"])].append(row)
+            peer_group = str(
+                row.get(self.config.peer_group_field)
+                or row.get("sector")
+                or "UNCLASSIFIED"
+            )
+            by_peer_group[peer_group].append(row)
 
         metric_scores: dict[str, dict[str, float | None]] = defaultdict(dict)
         metric_reliability: dict[str, dict[str, float]] = defaultdict(dict)
 
-        for sector, sector_rows in by_sector.items():
-            tickers = [str(row["ticker"]) for row in sector_rows]
+        for peer_rows in by_peer_group.values():
+            tickers = [str(row["ticker"]) for row in peer_rows]
             for rule in self.config.metric_rules:
-                if not _applies(rule, sector):
+                applicable_rows = [
+                    (ticker, peer_rows[index])
+                    for index, ticker in enumerate(tickers)
+                    if _applies(rule, str(peer_rows[index]["sector"]))
+                ]
+                if not applicable_rows:
                     continue
                 values = {
-                    ticker: sector_rows[index].get(rule.name)
-                    for index, ticker in enumerate(tickers)
+                    ticker: row.get(rule.name)
+                    for ticker, row in applicable_rows
                 }
                 if rule.direction in {"higher", "lower"}:
                     scores, reliability = peer_adjusted_percentile_rank(
@@ -176,6 +191,11 @@ class StructuralScoringEngine:
     ) -> StructuralScoreResult:
         ticker = str(row["ticker"])
         sector = str(row["sector"])
+        peer_group = str(
+            row.get(self.config.peer_group_field)
+            or row.get("sector")
+            or "UNCLASSIFIED"
+        )
         categories: dict[str, StructuralCategoryScore] = {}
 
         for category in self.config.category_weights:
@@ -269,6 +289,8 @@ class StructuralScoringEngine:
             confidence=max(0.0, min(1.0, confidence)),
             rankable=rankable,
             categories=categories,
+            peer_group=peer_group,
+            model_family=self.config.model_family,
             flags=tuple(flags),
             model_version=self.config.version,
         )
