@@ -1,0 +1,18 @@
+version: "1.2.0"
+
+official_domains:
+  - cvm.gov.br
+  - dados.cvm.gov.br
+  - b3.com.br
+  - arquivos.b3.com.br
+
+# Tier assignment is an evidence-weighting hint only. It is not a statement that every article
+# from a domain is correct, licensed for redistribution, or material to a given company.
+specialized_domains:
+  - reuters.com
+  - valor.globo.com
+  - infomoney.com.br
+  - moneytimes.com.br
+  - braziljournal.com
+  - neofeed.com.br
+  - investing.com
