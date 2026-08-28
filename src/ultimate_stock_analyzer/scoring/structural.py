@@ -127,7 +127,7 @@ class StructuralScoringEngine:
         metric_scores: dict[str, dict[str, float | None]] = defaultdict(dict)
         metric_reliability: dict[str, dict[str, float]] = defaultdict(dict)
 
-        for _, peer_rows in by_peer_group.items():
+        for peer_rows in by_peer_group.values():
             tickers = [str(row["ticker"]) for row in peer_rows]
             for rule in self.config.metric_rules:
                 applicable_rows = [
