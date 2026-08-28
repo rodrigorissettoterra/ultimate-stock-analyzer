@@ -2,8 +2,8 @@ from datetime import date
 
 from ultimate_stock_analyzer.quality.audit import (
     AuditEvent,
-    AuditSeverity,
     AuditorRecord,
+    AuditSeverity,
     analyze_audit_risk,
     auditor_change_events,
 )
