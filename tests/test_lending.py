@@ -1,4 +1,8 @@
-from ultimate_stock_analyzer.lending.metrics import rental_opportunity_score, short_pressure_score, utilization
+from ultimate_stock_analyzer.lending.metrics import (
+    rental_opportunity_score,
+    short_pressure_score,
+    utilization,
+)
 
 
 def test_lending_signals_are_separate() -> None:

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import io
-import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
+from io import StringIO
+from time import monotonic, sleep
 
 import httpx
 import pandas as pd
 
 from ultimate_stock_analyzer.dividends.regularity import DividendPayment
-
 
 DEFAULT_USER_AGENT = "ultimate-stock-analyzer/0.1"
 
@@ -58,22 +57,22 @@ class FundamentusDividendCollector:
         return f"https://www.fundamentus.com.br/proventos.php?papel={safe}&tipo=2"
 
     def _throttle(self) -> None:
-        elapsed = time.monotonic() - self._last_request_monotonic
+        elapsed = monotonic() - self._last_request_monotonic
         remaining = self.min_request_interval_seconds - elapsed
         if remaining > 0:
-            time.sleep(remaining)
+            sleep(remaining)
 
     def fetch_html(self, ticker: str) -> str:
         self._throttle()
         with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
             response = client.get(self.build_url(ticker), headers={"User-Agent": self.user_agent})
             response.raise_for_status()
-        self._last_request_monotonic = time.monotonic()
+        self._last_request_monotonic = monotonic()
         return response.text
 
     @staticmethod
     def parse_html(html: str) -> list[DividendPayment]:
-        tables = pd.read_html(io.StringIO(html), decimal=",", thousands=".")
+        tables = pd.read_html(StringIO(html), decimal=",", thousands=".")
         if not tables:
             return []
         target: pd.DataFrame | None = None
@@ -85,7 +84,6 @@ class FundamentusDividendCollector:
         if target is None:
             return []
 
-        # Resolve columns without depending on accents/case beyond the stable table labels.
         columns = {str(c).strip().lower(): c for c in target.columns}
         date_col = columns["data"]
         value_col = columns["valor"]
@@ -94,7 +92,8 @@ class FundamentusDividendCollector:
         result: list[DividendPayment] = []
         for _, row in target.iterrows():
             try:
-                parsed_date = datetime.strptime(str(row[date_col]).strip(), "%d/%m/%Y").date()
+                day, month, year = map(int, str(row[date_col]).strip().split("/"))
+                parsed_date = date(year, month, day)
                 raw_value = row[value_col]
                 if isinstance(raw_value, str):
                     value = float(raw_value.replace(".", "").replace(",", "."))

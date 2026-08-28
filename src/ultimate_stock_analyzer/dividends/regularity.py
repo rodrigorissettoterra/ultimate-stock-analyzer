@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from itertools import pairwise
 from statistics import median
 
 
@@ -9,7 +10,7 @@ from statistics import median
 class DividendPayment:
     ex_date: date
     amount_per_share: float
-    kind: str = "DIVIDEND"  # DIVIDEND or JCP
+    kind: str = "DIVIDEND"
     extraordinary: bool = False
 
 
@@ -35,9 +36,9 @@ def _month_gap(a: date, b: date) -> float:
 
 def _annual_totals(payments: list[DividendPayment]) -> dict[int, float]:
     totals: dict[int, float] = {}
-    for p in payments:
-        if not p.extraordinary:
-            totals[p.ex_date.year] = totals.get(p.ex_date.year, 0.0) + p.amount_per_share
+    for payment in payments:
+        if not payment.extraordinary:
+            totals[payment.ex_date.year] = totals.get(payment.ex_date.year, 0.0) + payment.amount_per_share
     return totals
 
 
@@ -51,30 +52,30 @@ def analyze_dividends(
 ) -> DividendProfile:
     cutoff_year = as_of.year - window_years + 1
     history = sorted(
-        [p for p in payments if cutoff_year <= p.ex_date.year <= as_of.year and p.ex_date <= as_of],
-        key=lambda p: p.ex_date,
+        [payment for payment in payments if cutoff_year <= payment.ex_date.year <= as_of.year and payment.ex_date <= as_of],
+        key=lambda payment: payment.ex_date,
     )
-    regular = [p for p in history if not p.extraordinary and p.amount_per_share > 0]
+    regular = [payment for payment in history if not payment.extraordinary and payment.amount_per_share > 0]
     annual = _annual_totals(regular)
     years_paid = len(annual)
     regular_year_ratio = years_paid / window_years if window_years else 0.0
 
-    gaps = [_month_gap(a.ex_date, b.ex_date) for a, b in zip(regular, regular[1:])]
+    gaps = [_month_gap(a.ex_date, b.ex_date) for a, b in pairwise(regular)]
     max_gap = max(gaps) if gaps else None
 
     ttm_cutoff = date(as_of.year - 1, as_of.month, min(as_of.day, 28))
-    ttm_amount = sum(p.amount_per_share for p in history if p.ex_date > ttm_cutoff)
+    ttm_amount = sum(payment.amount_per_share for payment in history if payment.ex_date > ttm_cutoff)
     ttm_yield = ttm_amount / current_price if current_price and current_price > 0 else None
 
-    annual_values = [annual[y] for y in sorted(annual)]
+    annual_values = [annual[year] for year in sorted(annual)]
     med = median(annual_values) if annual_values else None
-    cagr = None
+    annual_cagr = None
     if len(annual_values) >= 2 and annual_values[0] > 0 and annual_values[-1] >= 0:
-        cagr = (annual_values[-1] / annual_values[0]) ** (1 / (len(annual_values) - 1)) - 1
+        annual_cagr = (annual_values[-1] / annual_values[0]) ** (1 / (len(annual_values) - 1)) - 1
 
-    total_amount = sum(max(p.amount_per_share, 0) for p in history)
+    total_amount = sum(max(payment.amount_per_share, 0) for payment in history)
     extraordinary_amount = sum(
-        max(p.amount_per_share, 0) for p in history if p.extraordinary
+        max(payment.amount_per_share, 0) for payment in history if payment.extraordinary
     )
     extraordinary_share = extraordinary_amount / total_amount if total_amount > 0 else 0.0
 
@@ -89,7 +90,9 @@ def analyze_dividends(
         + 0.10 * count_component
         + 0.10 * extraordinary_penalty
     )
-    qualifies = years_paid >= min_years_paid and (max_gap is None or max_gap <= max_allowed_gap_months)
+    qualifies = years_paid >= min_years_paid and (
+        max_gap is None or max_gap <= max_allowed_gap_months
+    )
 
     return DividendProfile(
         years_paid=years_paid,
@@ -100,7 +103,7 @@ def analyze_dividends(
         ttm_amount=ttm_amount,
         ttm_yield=ttm_yield,
         median_annual_amount=med,
-        annual_amount_cagr=cagr,
+        annual_amount_cagr=annual_cagr,
         extraordinary_share=extraordinary_share,
         regularity_score=regularity_score,
         qualifies_as_regular_payer=qualifies,

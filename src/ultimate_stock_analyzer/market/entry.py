@@ -15,20 +15,20 @@ def rsi(values: Sequence[float], period: int = 14) -> float | None:
     if period <= 0 or len(values) < period + 1:
         return None
     changes = [values[i] - values[i - 1] for i in range(len(values) - period, len(values))]
-    gains = sum(max(c, 0.0) for c in changes) / period
-    losses = sum(abs(min(c, 0.0)) for c in changes) / period
+    gains = sum(max(change, 0.0) for change in changes) / period
+    losses = sum(abs(min(change, 0.0)) for change in changes) / period
     if losses == 0:
         return 100.0 if gains > 0 else 50.0
-    rs = gains / losses
-    return 100.0 - (100.0 / (1.0 + rs))
+    relative_strength = gains / losses
+    return 100.0 - (100.0 / (1.0 + relative_strength))
 
 
 def annualized_volatility(daily_returns: Sequence[float], trading_days: int = 252) -> float | None:
-    vals = [float(v) for v in daily_returns if math.isfinite(float(v))]
+    vals = [float(value) for value in daily_returns if math.isfinite(float(value))]
     if len(vals) < 2:
         return None
     mean = sum(vals) / len(vals)
-    variance = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)
+    variance = sum((value - mean) ** 2 for value in vals) / (len(vals) - 1)
     return math.sqrt(variance) * math.sqrt(trading_days)
 
 
@@ -38,8 +38,7 @@ def max_drawdown(prices: Sequence[float]) -> float | None:
     peak = prices[0]
     worst = 0.0
     for price in prices:
-        if price > peak:
-            peak = price
+        peak = max(peak, price)
         if peak > 0:
             drawdown = price / peak - 1.0
             worst = min(worst, drawdown)
@@ -59,7 +58,7 @@ def volume_zscore(volumes: Sequence[float], window: int = 60) -> float | None:
     history = list(volumes[-window - 1 : -1])
     current = volumes[-1]
     mean = sum(history) / len(history)
-    variance = sum((v - mean) ** 2 for v in history) / max(1, len(history) - 1)
+    variance = sum((value - mean) ** 2 for value in history) / max(1, len(history) - 1)
     std = math.sqrt(variance)
     if std == 0:
         return 0.0
@@ -76,8 +75,11 @@ def speculation_risk(
     """Heuristic 0..100 speculation risk; deterministic and intentionally transparent."""
     r5 = max(0.0, min(1.0, (return_5d or 0.0) / 0.15))
     r20 = max(0.0, min(1.0, (return_20d or 0.0) / 0.30))
-    vz = max(0.0, min(1.0, (volume_z or 0.0) / 4.0))
-    expensive = max(0.0, min(1.0, (valuation_percentile_expensiveness or 0.0) / 100.0))
+    volume_component = max(0.0, min(1.0, (volume_z or 0.0) / 4.0))
+    expensive = max(
+        0.0,
+        min(1.0, (valuation_percentile_expensiveness or 0.0) / 100.0),
+    )
     support = max(0.0, min(1.0, material_event_support))
-    raw = 100.0 * (0.30 * r5 + 0.20 * r20 + 0.25 * vz + 0.25 * expensive)
+    raw = 100.0 * (0.30 * r5 + 0.20 * r20 + 0.25 * volume_component + 0.25 * expensive)
     return max(0.0, min(100.0, raw * (1.0 - 0.65 * support)))

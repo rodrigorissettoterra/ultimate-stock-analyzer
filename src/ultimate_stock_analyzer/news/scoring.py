@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ultimate_stock_analyzer.domain.models import NewsSignal
 
@@ -18,9 +18,9 @@ def aggregate_news_score(
     if half_life_days <= 0:
         raise ValueError("half_life_days must be positive")
     if as_of is None:
-        as_of = datetime.now(timezone.utc)
+        as_of = datetime.now(UTC)
     if as_of.tzinfo is None:
-        as_of = as_of.replace(tzinfo=timezone.utc)
+        as_of = as_of.replace(tzinfo=UTC)
 
     numerator = 0.0
     denominator = 0.0
@@ -31,7 +31,7 @@ def aggregate_news_score(
         if signal.published_at is not None:
             published = signal.published_at
             if published.tzinfo is None:
-                published = published.replace(tzinfo=timezone.utc)
+                published = published.replace(tzinfo=UTC)
             age_days = max(0.0, (as_of - published).total_seconds() / 86400.0)
         decay = 0.5 ** (age_days / half_life_days)
         weight = (signal.severity / 5.0) * signal.confidence * decay

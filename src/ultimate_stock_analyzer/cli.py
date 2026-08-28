@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import UTC, datetime
 
 from ultimate_stock_analyzer.orchestration.fundamentus_screen import screen_regular_dividend_payers
 
@@ -18,7 +18,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "screen-dividends":
         rows = screen_regular_dividend_payers(
-            as_of=date.today(),
+            as_of=datetime.now(UTC).date(),
             min_snapshot_dy=args.min_dy,
             min_liquidity_2m=args.min_liquidity,
             max_candidates=args.max_candidates,

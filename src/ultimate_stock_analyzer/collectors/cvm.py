@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import io
-import zipfile
 from dataclasses import dataclass
+from io import BytesIO
+from zipfile import ZipFile
 
 import httpx
 import pandas as pd
-
 
 CVM_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC"
 
@@ -30,10 +29,9 @@ class CVMCollector:
             return response.content
 
     def list_csv_files(self, archive: bytes) -> list[str]:
-        with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+        with ZipFile(BytesIO(archive)) as zf:
             return sorted(name for name in zf.namelist() if name.lower().endswith(".csv"))
 
     def read_csv(self, archive: bytes, filename: str) -> pd.DataFrame:
-        with zipfile.ZipFile(io.BytesIO(archive)) as zf:
-            with zf.open(filename) as f:
-                return pd.read_csv(f, sep=";", encoding="latin1", low_memory=False)
+        with ZipFile(BytesIO(archive)) as zf, zf.open(filename) as f:
+            return pd.read_csv(f, sep=";", encoding="latin1", low_memory=False)

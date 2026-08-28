@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
+from json import loads
 
 import httpx
 
 from ultimate_stock_analyzer.domain.models import NewsSignal
-
 
 _SYSTEM_PROMPT = """You are a conservative financial event classifier for Brazilian listed companies.
 Return ONLY valid JSON. Do not invent facts. If evidence is weak, reduce confidence.
@@ -24,7 +23,13 @@ class OpenAICompatibleNewsClassifier:
     base_url: str = "https://api.openai.com/v1"
     timeout_seconds: float = 30.0
 
-    def classify(self, ticker: str, headline: str, text: str, source_url: str | None = None) -> NewsSignal:
+    def classify(
+        self,
+        ticker: str,
+        headline: str,
+        text: str,
+        source_url: str | None = None,
+    ) -> NewsSignal:
         if not self.api_key or not self.model:
             raise ValueError("LLM api_key and model are required")
         payload = {
@@ -42,12 +47,15 @@ class OpenAICompatibleNewsClassifier:
         with httpx.Client(timeout=self.timeout_seconds) as client:
             response = client.post(
                 f"{self.base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
                 json=payload,
             )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
+        parsed = loads(content)
         parsed["ticker"] = ticker
         parsed["source_url"] = source_url
         return NewsSignal.model_validate(parsed)

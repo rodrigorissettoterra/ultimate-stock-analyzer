@@ -1,4 +1,10 @@
-from ultimate_stock_analyzer.fundamentals.metrics import cagr, free_cash_flow, net_debt_to_ebitda, roe, roic
+from ultimate_stock_analyzer.fundamentals.metrics import (
+    cagr,
+    free_cash_flow,
+    net_debt_to_ebitda,
+    roe,
+    roic,
+)
 
 
 def test_basic_financial_metrics() -> None:
