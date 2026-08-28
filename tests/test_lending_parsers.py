@@ -1,3 +1,5 @@
+import pytest
+
 from ultimate_stock_analyzer.lending.parsers import (
     parse_lending_open_position_csv,
     parse_loan_balance_csv,
@@ -14,9 +16,9 @@ def test_parse_official_loan_balance_tags_and_rates() -> None:
     assert record.ticker == "TEST3"
     assert record.contracts_day == 9
     assert record.shares_day == 27351
-    assert record.value_day == 30086.10
-    assert record.donor_avg_rate == 0.0056
-    assert record.taker_avg_rate == 0.0056
+    assert record.value_day == pytest.approx(30086.10)
+    assert record.donor_avg_rate == pytest.approx(0.0056)
+    assert record.taker_avg_rate == pytest.approx(0.0056)
 
 
 def test_parse_open_position_does_not_confuse_stock_with_daily_flow() -> None:
@@ -26,5 +28,5 @@ def test_parse_open_position_does_not_confuse_stock_with_daily_flow() -> None:
     )
     record = parse_lending_open_position_csv(text)[0]
     assert record.balance_quantity == 448479
-    assert record.balance_value == 1274490.36
+    assert record.balance_value == pytest.approx(1274490.36)
     assert record.market == "Total"
