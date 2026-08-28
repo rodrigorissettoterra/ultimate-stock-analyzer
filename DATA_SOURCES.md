@@ -4,9 +4,11 @@ The project follows this priority: **official free source → public free source
 
 | Domain | Primary free source | Use | Redistribution policy |
 |---|---|---|---|
-| Financial statements | CVM Open Data | DFP/ITR structured statements | Store locally; publish collectors/schemas, not bulk mirrors |
+| Issuer registry | CVM `cad_cia_aberta.csv` | stable CVM code, CNPJ, legal name, registration status | Retrieve programmatically; no bulk mirror in Git |
+| Security master | CVM FCA | security type, trading code, market and document history | Store locally; publish collectors/schemas only |
+| Financial statements | CVM Open Data | DFP/ITR structured statements and restatements | Store locally; publish collectors/schemas, not bulk mirrors |
 | Company reference / governance | CVM FRE + governance datasets | ownership, administration, risks, governance | Same principle |
-| Securities / market events | B3 public data | tickers, corporate events, historical market data | Follow B3 terms; do not bulk mirror in Git |
+| Securities / market events | B3 public data | corporate events and historical market data | Follow B3 terms; do not bulk mirror in Git |
 | Securities lending | B3 public data | registered loans, historical operations, rates | Follow B3 terms; local processing only |
 | Macro | Banco Central SGS | Selic, FX, credit and related series | Retrieve from source programmatically |
 | Macro / economic activity | IBGE / IpeaData | inflation, GDP, labor and other series | Retrieve from source programmatically |
@@ -14,6 +16,12 @@ The project follows this priority: **official free source → public free source
 | Company documents | issuer IR + CVM/B3 | releases, guidance, material facts | Store metadata/derived features; avoid republishing protected content |
 | News | open/public financial sources | event detection and classification | Store metadata, short snippets if permitted, and derived features |
 | Analyst consensus | free sources if adequate | future estimates/revisions | Paid provider may be considered only after demonstrated need |
+
+## Current CVM cadence
+
+The company registry is updated daily. FCA, DFP and ITR structured archives are updated
+periodically by the CVM and may include re-presentations. The ingestion layer retains CVM
+document ids, versions and receipt timestamps instead of overwriting history.
 
 ## Paid-resource gate
 
