@@ -7,7 +7,7 @@
 - **M4 Dividend engine** — dividend/JCP history, regularity and sustainability. **DONE v0.4.**
 - **M5 Structural score** — sector percentiles, small-peer shrinkage, structural coverage/confidence and quality ranking. **DONE v0.5.**
 - **M6 Sector models** — banks, insurers, utilities, commodities and general corporates. **DONE v0.6.**
-- **M7 Valuation** — relative valuation and multi-model fair-value framework.
+- **M7 Valuation** — relative valuation and multi-model fair-value framework. **DONE v0.7.**
 - **M8 Market/entry** — price history, momentum, valuation context, speculation risk.
 - **M9 Risk/liquidity** — downside risk, spreads/turnover/free float.
 - **M10 Accounting/governance** — quality, audit, governance and insider evidence.

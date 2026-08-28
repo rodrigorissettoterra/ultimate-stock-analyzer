@@ -1,0 +1,43 @@
+version: "0.7.0"
+default_family: general_corporate_v1
+
+defaults:
+  min_model_coverage: 0.50
+  min_confidence: 0.45
+  high_dispersion_threshold: 0.35
+
+# Weights are hypotheses to be validated in M15/M16. They are not empirically optimized yet.
+families:
+  general_corporate_v1:
+    weights:
+      dcf_fcff: 0.40
+      pe_peer: 0.20
+      ev_ebitda_peer: 0.20
+      p_fcf_peer: 0.20
+
+  bank_v1:
+    weights:
+      residual_income: 0.45
+      pb_peer: 0.30
+      pe_peer: 0.25
+
+  insurance_v1:
+    weights:
+      residual_income: 0.35
+      pb_peer: 0.25
+      pe_peer: 0.20
+      ddm: 0.20
+
+  utilities_v1:
+    weights:
+      dcf_fcff: 0.40
+      ddm: 0.30
+      ev_ebitda_peer: 0.20
+      pe_peer: 0.10
+
+  commodities_v1:
+    weights:
+      midcycle_dcf: 0.35
+      ev_ebitda_midcycle: 0.30
+      pe_midcycle: 0.20
+      p_fcf_midcycle: 0.15
