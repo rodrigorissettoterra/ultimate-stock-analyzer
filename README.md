@@ -2,7 +2,7 @@
 
 An open, free-first and auditable research engine for Brazilian equities. The project separates **company quality**, **investment attractiveness at the current price**, and **entry timing**, combining deterministic financial calculations with LLM-assisted analysis of textual evidence.
 
-> **Status:** v0.4 — CVM point-in-time fundamentals plus dividend/JCP regularity and sustainability. This is research software, not individualized investment advice and not a promise of future returns.
+> **Status:** v0.5 — point-in-time CVM fundamentals, dividend sustainability and a dedicated structural quality score. This is research software, not individualized investment advice and not a promise of future returns.
 
 ## Design principles
 
@@ -21,14 +21,12 @@ An open, free-first and auditable research engine for Brazilian equities. The pr
 - Point-in-time financial statement normalization that prevents future-information leakage.
 - Exact CVM fixed-account extraction with source-line lineage.
 - Broad deterministic metrics: growth, margins, ROE/ROA/ROIC/ROCE, liquidity, leverage, cash flow, payout sustainability, efficiency and cash conversion cycle.
-- General-corporate input contract with explicit bank/insurer exclusion pending sector models.
 - B3 public corporate-action adapter for cash dividends/JCP with explicit source/date semantics.
-- Dividend regularity, streak/gap history, extraordinary dependence, TTM yield and annual stability.
-- Dividend sustainability score using earnings/FCF coverage rather than yield alone.
-- Point-in-time filtering of dividend announcements for leakage-safe research.
-- Cross-sectional, sector-aware percentile scoring with configurable metric direction and weights.
-- Separate quality, valuation, entry, news, rental, liquidity, risk and confidence dimensions.
-- Deterministic composite scoring and red-flag blocking.
+- Dividend regularity, extraordinary dependence, TTM decomposition and earnings/FCF sustainability.
+- Dedicated Structural Score that excludes valuation, current DY, entry timing, news and lending signals.
+- Sector peer percentiles with correct tie handling and small-sample shrinkage toward neutral.
+- Structural data coverage/confidence and abstention from ranking when evidence is insufficient.
+- Cross-sectional configurable scoring foundation for later valuation/entry/integrated scores.
 - OpenAI-compatible news/event classifier with strict structured output and no numeric score calculation by the LLM.
 - Banco Central SGS collector.
 - FastAPI endpoints for health, scoring and ranking.
@@ -69,7 +67,7 @@ src/ultimate_stock_analyzer/
   dividends/        dividend/JCP regularity and sustainability
   market/           entry and market-derived calculations
   news/             LLM-assisted event analysis
-  scoring/          normalization and scoring engine
+  scoring/          structural, valuation/entry and integrated scoring layers
   orchestration/    end-to-end analysis services
   api/              FastAPI interface
 config/scoring/      versioned model configuration
