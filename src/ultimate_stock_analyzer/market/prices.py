@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import io
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import date
-from typing import Iterable
+from datetime import UTC, date, datetime
 
 import httpx
 
@@ -117,7 +117,8 @@ class B3CotahistCollector:
     user_agent: str = "ultimate-stock-analyzer/0.8"
 
     def fetch_year(self, year: int, *, ticker: str | None = None) -> list[PriceBar]:
-        if year < 1986 or year > date.today().year:
+        current_year = datetime.now(UTC).year
+        if year < 1986 or year > current_year:
             raise ValueError("year is outside the public B3 historical-series range")
         url = B3_COTAHIST_YEAR_URL.format(year=year)
         with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
