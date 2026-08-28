@@ -1,0 +1,15 @@
+version: "1.1.0"
+
+rental_opportunity_weights:
+  donor_rate: 0.55
+  utilization: 0.30
+  daily_flow: 0.15
+
+short_pressure_weights:
+  utilization: 0.55
+  utilization_momentum: 0.25
+  taker_rate: 0.20
+
+min_coverage: 0.60
+min_confidence: 0.45
+open_position_history_target: 20
