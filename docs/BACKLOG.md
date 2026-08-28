@@ -1,23 +1,23 @@
-# Milestone Backlog
+# Backlog M0–M20
 
-- **M0 Foundation** — architecture, security, source registry, model spec, data dictionary, repo/CI. **DONE.**
-- **M1 Universe + CVM ingestion** — issuer/security master, DFP/ITR/FCA raw ingestion, canonical identifiers. **DONE v0.2.**
-- **M2 Financial normalization** — standardized statements, units, restatements, point-in-time observations. **DONE v0.2.**
-- **M3 Fundamental metrics** — formulas and sector contracts. **DONE v0.3.**
-- **M4 Dividend engine** — dividend/JCP history, regularity and sustainability. **DONE v0.4.**
-- **M5 Structural score** — sector percentiles, small-peer shrinkage, structural coverage/confidence and quality ranking. **DONE v0.5.**
+- **M0 Foundation** — architecture, security, licensing, specs, data dictionary. **DONE v0.1.**
+- **M1 Universe/CVM** — canonical issuers and securities from official CVM/B3-compatible data. **DONE v0.2.**
+- **M2 Normalization** — point-in-time financial statements with revision lineage. **DONE v0.2.**
+- **M3 Metrics engine** — deterministic fundamental metrics and CVM account contracts. **DONE v0.3.**
+- **M4 Dividend engine** — official-first events, regularity, TTM and sustainability. **DONE v0.4.**
+- **M5 Structural score** — sector-relative quality ranking, coverage and confidence. **DONE v0.5.**
 - **M6 Sector models** — banks, insurers, utilities, commodities and general corporates. **DONE v0.6.**
 - **M7 Valuation** — relative valuation and multi-model fair-value framework. **DONE v0.7.**
 - **M8 Market/entry** — price history, momentum, valuation context, speculation risk. **DONE v0.8.**
 - **M9 Risk/liquidity** — downside risk, spreads/turnover/free float. **DONE v0.9.**
-- **M10 Accounting/governance** — quality, audit, governance and insider evidence.
+- **M10 Accounting/governance** — quality, audit, governance and insider evidence. **DONE v1.0 candidate.**
 - **M11 Securities lending** — B3 loan rates, utilization and short pressure.
 - **M12 News/events + LLM** — dedupe, clustering, materiality and impact.
-- **M13 Macro** — BCB/IBGE/Ipea factors and sector sensitivities.
-- **M14 Integrated score** — full model and confidence/veto rules.
-- **M15 Backtesting** — point-in-time, survivorship and corporate-action correctness.
-- **M16 Walk-forward/calibration** — validate weights/thresholds without leakage.
-- **M17 API** — production serving contracts. Initial API exists in v0.1.
-- **M18 Dashboard** — ranking, company view and comparisons.
-- **M19 Conversational agent** — grounded explanations and research queries.
-- **M20 Production** — orchestration, observability, recovery and release governance.
+- **M13 Macro** — BCB/IBGE/Ipea and sector sensitivity.
+- **M14 Integrated score** — separate company quality, investment attractiveness and entry timing.
+- **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison.
+- **M16 Walk-forward** — weight calibration without look-ahead/overfit.
+- **M17 API** — stable read/query endpoints.
+- **M18 Dashboard** — ranking, company detail and comparison.
+- **M19 Conversational agent** — evidence-grounded explanations and queries.
+- **M20 Production** — scheduling, observability, release hardening.
