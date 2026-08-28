@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Sequence
+from itertools import pairwise
 
 
 def simple_moving_average(values: Sequence[float], window: int) -> float | None:
@@ -28,7 +29,7 @@ def period_return(values: Sequence[float], periods: int) -> float | None:
 
 def daily_returns(values: Sequence[float]) -> list[float]:
     returns: list[float] = []
-    for previous, current in zip(values, values[1:], strict=False):
+    for previous, current in pairwise(values):
         if previous <= 0:
             continue
         returns.append(float(current) / float(previous) - 1.0)
@@ -52,7 +53,7 @@ def rsi(values: Sequence[float], period: int = 14) -> float | None:
         return None
     changes = [
         float(current) - float(previous)
-        for previous, current in zip(values[-period - 1 :], values[-period:], strict=True)
+        for previous, current in pairwise(values[-period - 1 :])
     ]
     gains = [max(change, 0.0) for change in changes]
     losses = [max(-change, 0.0) for change in changes]
