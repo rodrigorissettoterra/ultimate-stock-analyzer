@@ -1,0 +1,42 @@
+version: "1.4.0"
+
+company_quality_weights:
+  structural: 0.65
+  accounting_quality: 0.15
+  governance: 0.12
+  audit_safety: 0.08
+
+investment_attractiveness_weights:
+  company_quality: 0.55
+  valuation: 0.25
+  news: 0.05
+  macro: 0.05
+  risk_safety: 0.04
+  liquidity: 0.03
+  lending_net: 0.03
+
+min_company_quality_coverage: 0.75
+min_investment_coverage: 0.80
+min_component_confidence: 0.40
+actionability_investment_weight: 0.85
+
+data_confidence_weights:
+  completeness: 0.30
+  freshness: 0.20
+  official_source_share: 0.20
+  consistency: 0.15
+  point_in_time_lineage: 0.15
+data_confidence_min_coverage: 0.80
+data_confidence_min_score: 65.0
+
+decision_thresholds:
+  very_attractive_quality: 75.0
+  very_attractive_investment: 80.0
+  very_attractive_entry: 65.0
+  attractive_quality: 65.0
+  attractive_investment: 70.0
+  attractive_entry: 55.0
+  wait_investment: 60.0
+  wait_entry: 45.0
+  avoid_quality: 40.0
+  avoid_investment: 40.0

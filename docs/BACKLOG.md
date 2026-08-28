@@ -13,8 +13,8 @@
 - **M10 Accounting/governance** — quality, audit, governance and insider evidence. **DONE v1.0.**
 - **M11 Securities lending** — B3 loan rates, utilization and short pressure. **DONE v1.1.**
 - **M12 News/events + LLM** — dedupe, clustering, materiality and impact. **DONE v1.2.**
-- **M13 Macro** — BCB/IBGE and sector sensitivity/scenarios. **DONE v1.3 candidate.**
-- **M14 Integrated score** — separate company quality, investment attractiveness and entry timing.
+- **M13 Macro** — BCB/IBGE and sector sensitivity/scenarios. **DONE v1.3.**
+- **M14 Integrated score** — separate company quality, investment attractiveness and entry timing. **DONE v1.4 candidate.**
 - **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison.
 - **M16 Walk-forward** — weight calibration without look-ahead/overfit.
 - **M17 API** — stable read/query endpoints.
