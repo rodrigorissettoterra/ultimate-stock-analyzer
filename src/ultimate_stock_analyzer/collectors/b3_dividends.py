@@ -132,12 +132,14 @@ def _parse_date(value: Any) -> date | None:
     text_value = str(value).strip()
     if not text_value:
         return None
-    for pattern in ("%d/%m/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(text_value, pattern).date()
-        except ValueError:
-            continue
-    return None
+    try:
+        return date.fromisoformat(text_value)
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(text_value, "%d/%m/%Y").replace(tzinfo=UTC).date()
+    except ValueError:
+        return None
 
 
 def _conservative_availability(approved_on: date | None) -> datetime | None:
