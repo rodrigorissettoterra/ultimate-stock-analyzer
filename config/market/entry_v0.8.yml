@@ -1,0 +1,17 @@
+version: "0.8.0"
+
+# Entry is a short-horizon layer. It cannot turn a weak Structural Score into a good company.
+weights:
+  valuation: 0.35
+  trend: 0.20
+  rsi: 0.15
+  pullback: 0.15
+  speculation_safety: 0.15
+
+min_coverage: 0.65
+min_confidence: 0.50
+
+thresholds:
+  favorable_score: 70
+  wait_score: 45
+  high_speculation_risk: 70
