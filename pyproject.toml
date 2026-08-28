@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ultimate-stock-analyzer"
+version = "0.1.0"
+description = "Free-first, auditable Brazilian equity analysis engine combining fundamentals, dividends, valuation, entry timing, news and securities lending."
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [{name = "Rodrigo Rissetto Terra"}]
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "PyYAML>=6.0",
+  "pandas>=2.2",
+  "numpy>=2.0",
+]
+
+[project.scripts]
+ultimate-stock-analyzer = "ultimate_stock_analyzer.cli:main"
+
+[project.optional-dependencies]
+analytics = ["polars>=1.5", "duckdb>=1.1", "pyarrow>=17"]
+fundamentus = ["fundamentus>=0.2"]
+dev = ["pytest>=8.3", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["ultimate_stock_analyzer"]

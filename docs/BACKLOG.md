@@ -1,0 +1,23 @@
+# Milestone Backlog
+
+- **M0 Foundation** — architecture, security, source registry, model spec, data dictionary, repo/CI. **Implemented in v0.1.**
+- **M1 Universe + CVM ingestion** — issuer/security master, DFP/ITR raw ingestion, canonical identifiers.
+- **M2 Financial normalization** — standardized statements, units, restatements, point-in-time observations.
+- **M3 Fundamental metrics** — formulas and sector contracts.
+- **M4 Dividend engine** — dividend/JCP history, regularity and sustainability.
+- **M5 Structural score** — sector percentiles and quality ranking.
+- **M6 Sector models** — banks, insurers, utilities, commodities and general corporates.
+- **M7 Valuation** — relative valuation and multi-model fair-value framework.
+- **M8 Market/entry** — price history, momentum, valuation context, speculation risk.
+- **M9 Risk/liquidity** — downside risk, spreads/turnover/free float.
+- **M10 Accounting/governance** — quality, audit, governance and insider evidence.
+- **M11 Securities lending** — B3 loan rates, utilization and short pressure.
+- **M12 News/events + LLM** — dedupe, clustering, materiality and impact.
+- **M13 Macro** — BCB/IBGE/Ipea factors and sector sensitivities.
+- **M14 Integrated score** — full model and confidence/veto rules.
+- **M15 Backtesting** — point-in-time, survivorship and corporate-action correctness.
+- **M16 Walk-forward/calibration** — validate weights/thresholds without leakage.
+- **M17 API** — production serving contracts. Initial API exists in v0.1.
+- **M18 Dashboard** — ranking, company view and comparisons.
+- **M19 Conversational agent** — grounded explanations and research queries.
+- **M20 Production** — orchestration, observability, recovery and release governance.

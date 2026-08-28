@@ -1,0 +1,83 @@
+version: "0.1.0"
+
+# Metric weights are normalized inside each category from available observations.
+metrics:
+  - {name: roe, category: profitability, weight: 0.25, direction: higher, sectors: ["*"]}
+  - {name: roic, category: profitability, weight: 0.35, direction: higher, sectors: ["Industrial", "Utilities", "Energy", "Materials", "Consumer", "Technology", "Healthcare", "Other"]}
+  - {name: ebit_margin, category: profitability, weight: 0.20, direction: higher, sectors: ["*"]}
+  - {name: net_margin, category: profitability, weight: 0.20, direction: higher, sectors: ["*"]}
+
+  - {name: net_debt_ebitda, category: financial_strength, weight: 0.35, direction: lower, sectors: ["Industrial", "Utilities", "Energy", "Materials", "Consumer", "Technology", "Healthcare", "Other"]}
+  - {name: interest_coverage, category: financial_strength, weight: 0.30, direction: higher, sectors: ["Industrial", "Utilities", "Energy", "Materials", "Consumer", "Technology", "Healthcare", "Other"]}
+  - {name: current_ratio, category: financial_strength, weight: 0.20, direction: higher, sectors: ["*"]}
+  - {name: debt_to_equity, category: financial_strength, weight: 0.15, direction: lower, sectors: ["*"]}
+
+  - {name: cash_conversion, category: cash_flow, weight: 0.35, direction: higher, sectors: ["*"]}
+  - {name: fcf_yield, category: cash_flow, weight: 0.35, direction: higher, sectors: ["*"]}
+  - {name: fcf_margin, category: cash_flow, weight: 0.30, direction: higher, sectors: ["*"]}
+
+  - {name: revenue_cagr_5y, category: growth, weight: 0.30, direction: higher, sectors: ["*"]}
+  - {name: eps_cagr_5y, category: growth, weight: 0.35, direction: higher, sectors: ["*"]}
+  - {name: fcf_cagr_5y, category: growth, weight: 0.35, direction: higher, sectors: ["*"]}
+
+  - {name: accrual_quality, category: accounting_quality, weight: 0.30, direction: higher, sectors: ["*"]}
+  - {name: piotroski_f, category: accounting_quality, weight: 0.35, direction: higher, sectors: ["*"]}
+  - {name: beneish_m, category: accounting_quality, weight: 0.20, direction: lower, sectors: ["*"]}
+  - {name: earnings_cash_consistency, category: accounting_quality, weight: 0.15, direction: higher, sectors: ["*"]}
+
+  - {name: dividend_regularity, category: dividends, weight: 0.30, direction: higher, sectors: ["*"]}
+  - {name: dy_5y_median, category: dividends, weight: 0.20, direction: higher, sectors: ["*"]}
+  - {name: dividend_cagr_5y, category: dividends, weight: 0.15, direction: higher, sectors: ["*"]}
+  - {name: payout_sustainability, category: dividends, weight: 0.20, direction: higher, sectors: ["*"]}
+  - {name: fcf_payout_sustainability, category: dividends, weight: 0.15, direction: higher, sectors: ["*"]}
+
+  - {name: capital_allocation, category: capital_allocation, weight: 1.0, direction: higher, sectors: ["*"]}
+  - {name: governance, category: governance, weight: 1.0, direction: higher, sectors: ["*"]}
+  - {name: predictability, category: predictability, weight: 1.0, direction: higher, sectors: ["*"]}
+
+  - {name: earnings_yield, category: valuation, weight: 0.25, direction: higher, sectors: ["*"]}
+  - {name: fcf_yield_valuation, category: valuation, weight: 0.30, direction: higher, sectors: ["*"]}
+  - {name: ev_ebit, category: valuation, weight: 0.20, direction: lower, sectors: ["Industrial", "Utilities", "Energy", "Materials", "Consumer", "Technology", "Healthcare", "Other"]}
+  - {name: pb, category: valuation, weight: 0.10, direction: lower, sectors: ["*"]}
+  - {name: margin_of_safety, category: valuation, weight: 0.15, direction: higher, sectors: ["*"]}
+
+  - {name: entry_value, category: entry, weight: 0.35, direction: higher, sectors: ["*"]}
+  - {name: distance_ma200_attractiveness, category: entry, weight: 0.20, direction: higher, sectors: ["*"]}
+  - {name: rsi_attractiveness, category: entry, weight: 0.15, direction: higher, sectors: ["*"]}
+  - {name: speculation_safety, category: entry, weight: 0.30, direction: higher, sectors: ["*"]}
+
+quality_category_weights:
+  profitability: 0.18
+  financial_strength: 0.16
+  cash_flow: 0.12
+  growth: 0.10
+  accounting_quality: 0.10
+  dividends: 0.12
+  capital_allocation: 0.08
+  governance: 0.08
+  predictability: 0.06
+
+investment_weights:
+  quality: 0.60
+  valuation: 0.24
+  news: 0.07
+  rental: 0.03
+  macro: 0.03
+  liquidity: 0.03
+  risk_penalty: 0.08
+  short_pressure_penalty: 0.04
+
+final_weights:
+  investment: 0.70
+  entry: 0.15
+  news: 0.10
+  rental: 0.05
+
+recommendation_thresholds:
+  very_attractive: 82
+  attractive: 72
+  avoid: 45
+  entry_support: 60
+  wait_entry: 45
+
+min_confidence_for_positive_label: 0.70
