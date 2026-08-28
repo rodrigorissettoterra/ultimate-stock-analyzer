@@ -170,12 +170,13 @@ def point_in_time_lines(
         for line in lines
         if line.available_from is not None and _aware(line.available_from) <= cutoff
     ]
-    winners: dict[tuple[str, str, str, date, str, str | None], FinancialStatementLine] = {}
+    winners: dict[tuple[str, str, str, str | None, date, str, str | None], FinancialStatementLine] = {}
     for line in eligible:
         key = (
             line.company_id,
             line.document_type,
             line.statement,
+            line.consolidation_scope,
             line.reference_date,
             line.account_code,
             line.fiscal_order,

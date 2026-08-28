@@ -116,3 +116,43 @@ def test_point_in_time_keeps_latest_revision_available_at_cutoff() -> None:
     assert february[0].version == 1
     assert april[0].value_brl == 110.0
     assert april[0].version == 2
+
+
+def test_point_in_time_preserves_individual_and_consolidated_scopes() -> None:
+    base = {
+        "CD_CVM": 12345,
+        "CNPJ_CIA": "00.000.000/0001-00",
+        "DENOM_CIA": "COMPANHIA TESTE S.A.",
+        "DT_REFER": "2025-12-31",
+        "VERSAO": 1,
+        "ORDEM_EXERC": "ÚLTIMO",
+        "CD_CONTA": "1",
+        "DS_CONTA": "Ativo Total",
+        "VL_CONTA": 100,
+        "ESCALA_MOEDA": "UNIDADE",
+        "DT_RECEB": "2026-02-10",
+    }
+    frame = pd.DataFrame(
+        [
+            {**base, "GRUPO_DFP": "DF Consolidado", "ID_DOC": 1},
+            {**base, "GRUPO_DFP": "DF Individual", "ID_DOC": 2},
+        ]
+    )
+    lines = normalize_statement(
+        frame,
+        document_type="DFP",
+        statement="BPA",
+        collected_at=datetime(2026, 8, 28, tzinfo=UTC),
+        source_document="fixture.csv",
+    )
+
+    snapshot = point_in_time_lines(
+        lines,
+        as_of=datetime(2026, 2, 28, tzinfo=UTC),
+    )
+
+    assert len(snapshot) == 2
+    assert {line.consolidation_scope for line in snapshot} == {
+        "DF Consolidado",
+        "DF Individual",
+    }
