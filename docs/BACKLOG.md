@@ -4,7 +4,7 @@
 - **M1 Universe + CVM ingestion** — issuer/security master, DFP/ITR/FCA raw ingestion, canonical identifiers. **DONE v0.2.**
 - **M2 Financial normalization** — standardized statements, units, restatements, point-in-time observations. **DONE v0.2.**
 - **M3 Fundamental metrics** — formulas and sector contracts. **DONE v0.3.**
-- **M4 Dividend engine** — dividend/JCP history, regularity and sustainability.
+- **M4 Dividend engine** — dividend/JCP history, regularity and sustainability. **DONE v0.4.**
 - **M5 Structural score** — sector percentiles and quality ranking.
 - **M6 Sector models** — banks, insurers, utilities, commodities and general corporates.
 - **M7 Valuation** — relative valuation and multi-model fair-value framework.

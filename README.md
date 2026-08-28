@@ -2,7 +2,7 @@
 
 An open, free-first and auditable research engine for Brazilian equities. The project separates **company quality**, **investment attractiveness at the current price**, and **entry timing**, combining deterministic financial calculations with LLM-assisted analysis of textual evidence.
 
-> **Status:** v0.3 — foundation, CVM point-in-time ingestion/normalization and expanded fundamental metrics. This is research software, not individualized investment advice and not a promise of future returns.
+> **Status:** v0.4 — CVM point-in-time fundamentals plus dividend/JCP regularity and sustainability. This is research software, not individualized investment advice and not a promise of future returns.
 
 ## Design principles
 
@@ -22,7 +22,10 @@ An open, free-first and auditable research engine for Brazilian equities. The pr
 - Exact CVM fixed-account extraction with source-line lineage.
 - Broad deterministic metrics: growth, margins, ROE/ROA/ROIC/ROCE, liquidity, leverage, cash flow, payout sustainability, efficiency and cash conversion cycle.
 - General-corporate input contract with explicit bank/insurer exclusion pending sector models.
-- Dividend regularity profile over configurable windows.
+- B3 public corporate-action adapter for cash dividends/JCP with explicit source/date semantics.
+- Dividend regularity, streak/gap history, extraordinary dependence, TTM yield and annual stability.
+- Dividend sustainability score using earnings/FCF coverage rather than yield alone.
+- Point-in-time filtering of dividend announcements for leakage-safe research.
 - Cross-sectional, sector-aware percentile scoring with configurable metric direction and weights.
 - Separate quality, valuation, entry, news, rental, liquidity, risk and confidence dimensions.
 - Deterministic composite scoring and red-flag blocking.
@@ -30,7 +33,7 @@ An open, free-first and auditable research engine for Brazilian equities. The pr
 - Banco Central SGS collector.
 - FastAPI endpoints for health, scoring and ranking.
 - Synthetic end-to-end examples and deterministic unit tests.
-- Executable free-source dividend screener using Fundamentus only as a fallback/cross-check adapter.
+- Fundamentus adapter retained only as a fallback/cross-check.
 
 ## Quick start
 
@@ -63,7 +66,7 @@ src/ultimate_stock_analyzer/
   collectors/       public-source ingestion adapters
   normalization/    canonical point-in-time financial normalization
   fundamentals/     deterministic formulas and CVM accounting contracts
-  dividends/        dividend/JCP regularity analysis
+  dividends/        dividend/JCP regularity and sustainability
   market/           entry and market-derived calculations
   news/             LLM-assisted event analysis
   scoring/          normalization and scoring engine
