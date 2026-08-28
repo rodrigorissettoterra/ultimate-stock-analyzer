@@ -1,0 +1,37 @@
+version: "0.6.0"
+model_family: "bank_v1"
+peer_group_field: "peer_group"
+default_min_peer_count: 8
+min_coverage_for_ranking: 0.65
+min_confidence_for_ranking: 0.55
+
+category_weights:
+  profitability: 0.25
+  asset_quality: 0.25
+  capital: 0.20
+  efficiency: 0.15
+  growth: 0.05
+  dividends: 0.10
+
+metrics:
+  - {name: roe, category: profitability, weight: 0.45, direction: higher}
+  - {name: roa, category: profitability, weight: 0.25, direction: higher}
+  - {name: net_interest_margin, category: profitability, weight: 0.30, direction: higher}
+
+  - {name: npl_90d_ratio, category: asset_quality, weight: 0.40, direction: lower}
+  - {name: cost_of_credit, category: asset_quality, weight: 0.30, direction: lower}
+  - {name: npl_coverage, category: asset_quality, weight: 0.30, direction: higher}
+
+  - {name: basel_ratio, category: capital, weight: 0.45, direction: higher}
+  - {name: tier1_ratio, category: capital, weight: 0.35, direction: higher}
+  - {name: equity_to_assets, category: capital, weight: 0.20, direction: higher}
+
+  - {name: efficiency_ratio, category: efficiency, weight: 0.70, direction: lower}
+  - {name: fee_income_share, category: efficiency, weight: 0.30, direction: higher}
+
+  - {name: loan_cagr_5y, category: growth, weight: 0.40, direction: higher}
+  - {name: net_income_cagr_5y, category: growth, weight: 0.60, direction: higher}
+
+  - {name: dividend_regularity, category: dividends, weight: 0.45, direction: higher}
+  - {name: dividend_sustainability, category: dividends, weight: 0.40, direction: higher}
+  - {name: dividend_cagr_5y, category: dividends, weight: 0.15, direction: higher}

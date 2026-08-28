@@ -1,0 +1,39 @@
+version: "0.6.0"
+model_family: "general_corporate_v1"
+peer_group_field: "peer_group"
+default_min_peer_count: 8
+min_coverage_for_ranking: 0.65
+min_confidence_for_ranking: 0.55
+
+category_weights:
+  profitability: 0.25
+  financial_strength: 0.25
+  cash_flow: 0.20
+  growth: 0.15
+  dividends: 0.15
+
+metrics:
+  - {name: roic, category: profitability, weight: 0.30, direction: higher}
+  - {name: roe, category: profitability, weight: 0.20, direction: higher}
+  - {name: roa, category: profitability, weight: 0.15, direction: higher}
+  - {name: ebit_margin, category: profitability, weight: 0.20, direction: higher}
+  - {name: net_margin, category: profitability, weight: 0.15, direction: higher}
+
+  - {name: net_debt_ebitda, category: financial_strength, weight: 0.30, direction: lower}
+  - {name: interest_coverage, category: financial_strength, weight: 0.20, direction: higher}
+  - {name: debt_to_equity, category: financial_strength, weight: 0.20, direction: lower}
+  - {name: equity_ratio, category: financial_strength, weight: 0.15, direction: higher}
+  - {name: cash_to_debt, category: financial_strength, weight: 0.15, direction: higher}
+
+  - {name: cash_conversion, category: cash_flow, weight: 0.30, direction: target, target: 1.0, tolerance: 1.5}
+  - {name: fcf_margin, category: cash_flow, weight: 0.30, direction: higher}
+  - {name: cfo_margin, category: cash_flow, weight: 0.20, direction: higher}
+  - {name: operating_cash_flow_to_debt, category: cash_flow, weight: 0.20, direction: higher}
+
+  - {name: revenue_cagr_5y, category: growth, weight: 0.40, direction: higher}
+  - {name: net_income_cagr_5y, category: growth, weight: 0.30, direction: higher}
+  - {name: fcf_cagr_5y, category: growth, weight: 0.30, direction: higher}
+
+  - {name: dividend_regularity, category: dividends, weight: 0.40, direction: higher}
+  - {name: dividend_sustainability, category: dividends, weight: 0.40, direction: higher}
+  - {name: dividend_cagr_5y, category: dividends, weight: 0.20, direction: higher}

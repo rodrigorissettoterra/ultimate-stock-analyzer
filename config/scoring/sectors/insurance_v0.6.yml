@@ -1,0 +1,36 @@
+version: "0.6.0"
+model_family: "insurance_v1"
+peer_group_field: "peer_group"
+default_min_peer_count: 8
+min_coverage_for_ranking: 0.65
+min_confidence_for_ranking: 0.55
+
+category_weights:
+  profitability: 0.20
+  underwriting_quality: 0.30
+  capital: 0.20
+  growth: 0.10
+  predictability: 0.10
+  dividends: 0.10
+
+metrics:
+  - {name: roe, category: profitability, weight: 0.60, direction: higher}
+  - {name: roa, category: profitability, weight: 0.40, direction: higher}
+
+  - {name: combined_ratio, category: underwriting_quality, weight: 0.50, direction: lower}
+  - {name: loss_ratio, category: underwriting_quality, weight: 0.30, direction: lower}
+  - {name: expense_ratio, category: underwriting_quality, weight: 0.20, direction: lower}
+
+  - {name: solvency_ratio, category: capital, weight: 0.45, direction: higher}
+  - {name: capital_adequacy_ratio, category: capital, weight: 0.30, direction: higher}
+  - {name: technical_provisions_coverage, category: capital, weight: 0.25, direction: higher}
+
+  - {name: premiums_cagr_5y, category: growth, weight: 0.55, direction: higher}
+  - {name: net_income_cagr_5y, category: growth, weight: 0.45, direction: higher}
+
+  - {name: combined_ratio_volatility_5y, category: predictability, weight: 0.55, direction: lower}
+  - {name: earnings_volatility_5y, category: predictability, weight: 0.45, direction: lower}
+
+  - {name: dividend_regularity, category: dividends, weight: 0.45, direction: higher}
+  - {name: dividend_sustainability, category: dividends, weight: 0.40, direction: higher}
+  - {name: dividend_cagr_5y, category: dividends, weight: 0.15, direction: higher}

@@ -1,0 +1,42 @@
+version: "0.6.0"
+
+default_model:
+  id: general_corporate
+  config: sectors/general_corporate_v0.6.yml
+  peer_group_by: [sector]
+
+models:
+  - id: banks
+    priority: 100
+    config: sectors/banks_v0.6.yml
+    peer_group_by: []
+    match:
+      sector_contains: [bank, banking, bancos]
+      subsector_contains: [bank, banking, banco, bancos, intermediacao financeira, intermediação financeira]
+      segment_contains: [bank, banco]
+
+  - id: insurance
+    priority: 95
+    config: sectors/insurance_v0.6.yml
+    peer_group_by: []
+    match:
+      sector_contains: [insurance, seguros]
+      subsector_contains: [insurance, seguradora, seguradoras, seguros, resseguro]
+      segment_contains: [insurance, seguros, resseguro]
+
+  - id: utilities
+    priority: 80
+    config: sectors/utilities_v0.6.yml
+    peer_group_by: [subsector, sector]
+    match:
+      sector_contains: [utilities, utility, utilidade publica, utilidade pública, energia eletrica, energia elétrica, saneamento]
+      subsector_contains: [energia eletrica, energia elétrica, transmissao, transmissão, distribuicao, distribuição, geracao, geração, saneamento, agua, água]
+
+  - id: commodities
+    priority: 70
+    config: sectors/commodities_v0.6.yml
+    peer_group_by: [subsector, segment, sector]
+    match:
+      sector_contains: [oil & gas, petroleo, petróleo, mining, mineracao, mineração, metals & mining, pulp & paper, celulose]
+      subsector_contains: [oil, gas, petroleo, petróleo, mining, mineracao, mineração, siderurgia, steel, celulose, pulp, papel]
+      segment_contains: [oil, gas, petroleo, petróleo, mining, mineracao, mineração, iron ore, minério, siderurgia, celulose, pulp]
