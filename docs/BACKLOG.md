@@ -5,7 +5,7 @@
 - **M2 Financial normalization** — standardized statements, units, restatements, point-in-time observations. **DONE v0.2.**
 - **M3 Fundamental metrics** — formulas and sector contracts. **DONE v0.3.**
 - **M4 Dividend engine** — dividend/JCP history, regularity and sustainability. **DONE v0.4.**
-- **M5 Structural score** — sector percentiles and quality ranking.
+- **M5 Structural score** — sector percentiles, small-peer shrinkage, structural coverage/confidence and quality ranking. **DONE v0.5.**
 - **M6 Sector models** — banks, insurers, utilities, commodities and general corporates.
 - **M7 Valuation** — relative valuation and multi-model fair-value framework.
 - **M8 Market/entry** — price history, momentum, valuation context, speculation risk.
