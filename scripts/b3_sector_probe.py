@@ -160,7 +160,7 @@ def main() -> None:
         _probe_json(
             client,
             "GetInitialCompanies",
-            {"language": "pt-br", "pageNumber": 1, "pageSize": 2},
+            {"language": "pt-br", "pageNumber": 1, "pageSize": 5000},
         )
         _probe_workbook(client)
 
