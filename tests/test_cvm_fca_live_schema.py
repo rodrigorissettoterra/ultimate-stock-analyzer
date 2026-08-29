@@ -80,13 +80,17 @@ def test_live_fca_headers_map_cnpj_to_stable_cvm_identity() -> None:
     assert security.reference_date == date(2025, 12, 31)
     assert security.version == 7
     assert security.trading_start == date(2000, 1, 3)
+    assert service.last_unmapped_security_tickers == ()
 
 
-def test_live_fca_ticker_without_registry_identity_fails_closed() -> None:
+def test_live_fca_ticker_without_registry_identity_is_excluded_and_reported() -> None:
     service = CVMIngestionService(collector=LiveFCACollector())  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="could not be mapped"):
-        service.load_security_master_from_archive(
+    with pytest.warns(RuntimeWarning, match="without an official CVM issuer identity"):
+        securities = service.load_security_master_from_archive(
             b"fca",
             collected_at=datetime(2026, 8, 29, 19, tzinfo=UTC),
         )
+
+    assert securities == []
+    assert service.last_unmapped_security_tickers == ("PETR4",)
