@@ -1,0 +1,22 @@
+version: "1.6.0"
+baseline_model: config/scoring/integrated_v1.4.yml
+calibration_target: investment_attractiveness_weights
+objective: mean_cross_sectional_spearman_ic
+search:
+  method: deterministic_local_shifts
+  step: 0.02
+constraints:
+  max_abs_weight_change: 0.05
+  max_l1_drift: 0.15
+  non_negative_weights: true
+  weights_sum_to_one: true
+regularization_strength: 0.15
+promotion:
+  min_folds: 3
+  min_mean_oos_improvement: 0.02
+  min_positive_fold_fraction: 0.6666666667
+  min_candidate_consensus_fraction: 0.50
+anti_leakage:
+  training_outcome_must_be_available_before_test: true
+  test_never_used_for_candidate_selection: true
+  baseline_always_compared_out_of_sample: true
