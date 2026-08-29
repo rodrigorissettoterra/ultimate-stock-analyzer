@@ -27,8 +27,9 @@
 These are validation and operations tasks rather than missing architecture milestones:
 
 - populate a sufficiently complete point-in-time B3/CVM historical dataset;
-  - **bootstrap tooling:** implementation candidate in `POST_M20_PUBLIC_DATA_BOOTSTRAP.md`;
-  - actual downloaded datasets remain outside Git and are not marked complete by code merge alone;
+  - public-data bootstrap tooling: **implemented**; actual downloaded datasets remain outside Git;
+  - fundamental/publication-timing coverage profiler: **implementation candidate**;
+  - sector applicability still requires B3 sector/subsector/segment enrichment;
 - execute full historical backtests across multiple market regimes;
 - run M16 walk-forward calibration and promote new weights only if OOS gates are met repeatedly;
 - automate/schedule production collectors with source-specific monitoring and retry policies;

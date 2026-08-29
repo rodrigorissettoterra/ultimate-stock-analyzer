@@ -1,3 +1,9 @@
+from ultimate_stock_analyzer.bootstrap.coverage import (
+    FundamentalCoverageProfiler,
+    FundamentalCoverageRecord,
+    FundamentalCoverageSummary,
+)
+from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
 from ultimate_stock_analyzer.bootstrap.public_data import (
     PublicDataBootstrapManifest,
     PublicDataBootstrapPlan,
@@ -5,6 +11,10 @@ from ultimate_stock_analyzer.bootstrap.public_data import (
 )
 
 __all__ = [
+    "BootstrapDataset",
+    "FundamentalCoverageProfiler",
+    "FundamentalCoverageRecord",
+    "FundamentalCoverageSummary",
     "PublicDataBootstrapManifest",
     "PublicDataBootstrapPlan",
     "PublicDataBootstrapService",
