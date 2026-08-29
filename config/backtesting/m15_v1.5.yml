@@ -1,0 +1,16 @@
+version: "1.5.0"
+top_n: 10
+min_investment_score: 0.0
+transaction_cost_bps: 10.0
+slippage_bps: 0.0
+execution_rule: next_available_trading_session
+missing_asset_price_policy: fail_closed
+benchmark_required: true
+corporate_actions:
+  cash_distributions: explicit
+  splits_and_bonuses: share_ratio
+  subscriptions: unsupported_without_adjusted_series
+point_in_time:
+  require_available_at: true
+  preserve_delisted_members: true
+  revisions_visible_only_after_publication: true
