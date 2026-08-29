@@ -163,8 +163,7 @@ src/ultimate_stock_analyzer/
   news/             news/event evidence and LLM-assisted classification
   macro/            macro data and sensitivity engines
   scoring/          structural and integrated decision models
-  backtesting/      point-in-time simulation and performance metrics
-  calibration/      walk-forward candidate evaluation
+  backtesting/      point-in-time simulation, metrics and walk-forward calibration
   agent/            deterministic retrieval + optional LLM synthesis
   api/              FastAPI v1 contracts and query services
   web/              dependency-light dashboard
