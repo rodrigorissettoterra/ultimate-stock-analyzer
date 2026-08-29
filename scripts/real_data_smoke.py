@@ -162,8 +162,21 @@ def _itub_bank_profile(
     }
     missing = sorted(name for name, value in required_metrics.items() if value is None)
     if missing:
+        diagnostic_fields = {
+            "total_assets": profile.total_assets,
+            "prior_total_assets": profile.prior_total_assets,
+            "equity": profile.equity,
+            "prior_equity": profile.prior_equity,
+            "gross_credit_portfolio": profile.gross_credit_portfolio,
+            "prior_gross_credit_portfolio": profile.prior_gross_credit_portfolio,
+            "annual_net_income": profile.annual_net_income,
+            "annual_credit_loss_result": profile.annual_credit_loss_result,
+        }
         raise RuntimeError(
-            "ITUB4 IFData profile is missing verified bank metrics: " + ", ".join(missing)
+            "ITUB4 IFData profile is missing verified bank metrics: "
+            + ", ".join(missing)
+            + "; evidence="
+            + json.dumps(diagnostic_fields, sort_keys=True, default=str)
         )
     return {
         "company_id": profile.company_id,
