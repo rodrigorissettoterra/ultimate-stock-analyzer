@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
+from itertools import pairwise
 
 from ultimate_stock_analyzer.backtesting.models import (
     BacktestPolicy,
@@ -63,7 +64,7 @@ def run_rebalance_backtest(
     periods: list[PeriodObservation] = []
     versions: set[str] = set()
 
-    for decision_date, exit_decision_date in zip(dates, dates[1:], strict=True):
+    for decision_date, exit_decision_date in pairwise(dates):
         ranked = rank_visible_scores(
             score_snapshots,
             as_of=decision_date,
