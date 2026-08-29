@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from typing import Any
 
 import httpx
 
 BASE = "https://olinda.bcb.gov.br/olinda/servico/IFDATA/versao/v1/odata"
-ANO_MES = 202512
-REPORTS_TO_INSPECT = ("1", "2", "3", "4", "5")
+PERIODS = (202503, 202506, 202509, 202512)
+CREDIT_REPORTS = ("8", "11", "13")
+LEADER_CNPJ_ROOT = "60872504"
+SELECT_VALUES = (
+    "TipoInstituicao,CodInst,AnoMes,NomeRelatorio,NumeroRelatorio,"
+    "Grupo,Conta,NomeColuna,DescricaoColuna,Saldo"
+)
 
 
 def _get(client: httpx.Client, path: str, params: dict[str, object]) -> dict[str, Any]:
@@ -29,75 +35,125 @@ def _values(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, dict)]
 
 
-def main() -> None:
-    with httpx.Client(timeout=180.0, follow_redirects=True) as client:
-        reports = _values(_get(client, "ListaDeRelatorio()", {"$format": "json"}))
-        print(json.dumps({"reports": reports}, ensure_ascii=False, sort_keys=True))
-
-        cadastro = _values(
-            _get(
-                client,
-                "IfDataCadastro(AnoMes=@AnoMes)",
-                {
-                    "@AnoMes": ANO_MES,
-                    "$format": "json",
-                    "$select": (
-                        "CodInst,Data,NomeInstituicao,Tcb,Td,Tc,SegmentoTb,Atividade,"
-                        "Sr,CodConglomeradoFinanceiro,CodConglomeradoPrudencial,"
-                        "CnpjInstituicaoLider,Situacao"
-                    ),
-                },
-            )
+def _cod_inst(client: httpx.Client, ano_mes: int) -> str:
+    cadastro = _values(
+        _get(
+            client,
+            "IfDataCadastro(AnoMes=@AnoMes)",
+            {
+                "@AnoMes": ano_mes,
+                "$format": "json",
+                "$select": (
+                    "CodInst,Data,NomeInstituicao,CodConglomeradoPrudencial,"
+                    "CnpjInstituicaoLider,Situacao"
+                ),
+            },
         )
-        prudent_candidates = [
-            row
-            for row in cadastro
-            if row.get("Situacao") == "A"
-            and row.get("CnpjInstituicaoLider") == "60872504"
-            and row.get("CodConglomeradoPrudencial")
-            and row.get("CodInst") == row.get("CodConglomeradoPrudencial")
-        ]
-        if len(prudent_candidates) != 1:
-            raise RuntimeError(
-                "expected exactly one ITAU prudential-conglomerate row, "
-                f"found {len(prudent_candidates)}"
-            )
-        chosen = prudent_candidates[0]
-        cod_inst = str(chosen["CodInst"])
-        print(json.dumps({"chosen_cod_inst": cod_inst, "chosen": chosen}, ensure_ascii=False))
+    )
+    candidates = [
+        row
+        for row in cadastro
+        if row.get("Situacao") == "A"
+        and row.get("CnpjInstituicaoLider") == LEADER_CNPJ_ROOT
+        and row.get("CodConglomeradoPrudencial")
+        and row.get("CodInst") == row.get("CodConglomeradoPrudencial")
+    ]
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"expected one Itaú prudential row for {ano_mes}, found {len(candidates)}"
+        )
+    return str(candidates[0]["CodInst"])
 
-        report_names = {
-            str(row.get("NumeroRelatorio")): str(row.get("NomeRelatorio"))
-            for row in reports
-        }
-        target_reports: dict[str, dict[str, Any]] = {}
-        for number in REPORTS_TO_INSPECT:
-            payload = _get(
+
+def _report_rows(
+    client: httpx.Client,
+    *,
+    ano_mes: int,
+    report: str,
+    cod_inst: str,
+) -> list[dict[str, Any]]:
+    payload = _get(
+        client,
+        "IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,Relatorio=@Relatorio)",
+        {
+            "@AnoMes": ano_mes,
+            "@TipoInstituicao": 1,
+            "@Relatorio": f"'{report}'",
+            "$format": "json",
+            "$select": SELECT_VALUES,
+        },
+    )
+    return [
+        row
+        for row in _values(payload)
+        if str(row.get("CodInst") or "") == cod_inst
+    ]
+
+
+def _plain(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
+
+
+def main() -> None:
+    with httpx.Client(timeout=240.0, follow_redirects=True) as client:
+        income_periodicity: dict[str, dict[str, Any]] = {}
+        for ano_mes in PERIODS:
+            cod_inst = _cod_inst(client, ano_mes)
+            rows = _report_rows(
                 client,
-                "IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,Relatorio=@Relatorio)",
-                {
-                    "@AnoMes": ANO_MES,
-                    "@TipoInstituicao": 1,
-                    "@Relatorio": f"'{number}'",
-                    "$format": "json",
-                    "$select": (
-                        "TipoInstituicao,CodInst,AnoMes,NomeRelatorio,NumeroRelatorio,"
-                        "Grupo,Conta,NomeColuna,DescricaoColuna,Saldo"
-                    ),
-                },
+                ano_mes=ano_mes,
+                report="4",
+                cod_inst=cod_inst,
             )
-            rows = _values(payload)
-            target_rows = [row for row in rows if str(row.get("CodInst")) == cod_inst]
-            target_reports[number] = {
-                "report_name": report_names.get(number),
-                "all_rows": len(rows),
-                "target_rows": len(target_rows),
-                "columns": sorted({str(row.get("NomeColuna")) for row in target_rows}),
-                "rows": target_rows,
+            selected = {
+                str(row.get("Conta")): {
+                    "name": row.get("NomeColuna"),
+                    "saldo": row.get("Saldo"),
+                }
+                for row in rows
+                if str(row.get("Conta")) in {"141870", "141851", "141840", "141856", "141857", "141858", "141859"}
+            }
+            income_periodicity[str(ano_mes)] = {
+                "cod_inst": cod_inst,
+                "selected": selected,
             }
         print(
             json.dumps(
-                {"target_reports": target_reports},
+                {"income_periodicity": income_periodicity},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+
+        cod_inst = _cod_inst(client, 202512)
+        credit_quality: dict[str, Any] = {}
+        keywords = ("vencid", "90", "inadimpl", "atras", "perda", "risco")
+        for report in CREDIT_REPORTS:
+            rows = _report_rows(
+                client,
+                ano_mes=202512,
+                report=report,
+                cod_inst=cod_inst,
+            )
+            interesting = [
+                row
+                for row in rows
+                if any(
+                    keyword in _plain(
+                        f"{row.get('Grupo')} {row.get('NomeColuna')} {row.get('DescricaoColuna')}"
+                    )
+                    for keyword in keywords
+                )
+            ]
+            credit_quality[report] = {
+                "target_rows": len(rows),
+                "columns": sorted({str(row.get("NomeColuna")) for row in rows}),
+                "interesting_rows": interesting,
+            }
+        print(
+            json.dumps(
+                {"credit_quality": credit_quality},
                 ensure_ascii=False,
                 sort_keys=True,
             )
