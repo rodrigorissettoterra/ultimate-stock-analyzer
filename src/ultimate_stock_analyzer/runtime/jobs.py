@@ -4,10 +4,8 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar
 from uuid import uuid4
 
-T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +22,7 @@ class RetryPolicy:
             raise ValueError("retry delays cannot be negative")
 
 
-def run_with_retry(
+def run_with_retry[T](
     job_name: str,
     operation: Callable[[], T],
     *,
