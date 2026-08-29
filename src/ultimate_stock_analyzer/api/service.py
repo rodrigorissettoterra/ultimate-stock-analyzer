@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
-
 from ultimate_stock_analyzer.api.repository import AnalysisRepository
 from ultimate_stock_analyzer.api.schemas import (
     BacktestSummary,
@@ -47,7 +45,10 @@ class AnalysisQueryService:
         )
         total = len(ordered)
         page = ordered[offset : offset + limit]
-        items = [self._ranking_item(row, rank=offset + index + 1) for index, row in enumerate(page)]
+        items = [
+            self._ranking_item(row, rank=offset + index + 1)
+            for index, row in enumerate(page)
+        ]
         as_of = max((row.as_of for row in ordered), default=None)
         return RankingPage(items=items, total=total, limit=limit, offset=offset, as_of=as_of)
 
