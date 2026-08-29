@@ -1,6 +1,9 @@
 from datetime import date
 
-from ultimate_stock_analyzer.market.prices import parse_cotahist_line
+import httpx
+import pytest
+
+from ultimate_stock_analyzer.market.prices import B3CotahistCollector, parse_cotahist_line
 
 
 def _field(value: str, width: int) -> str:
@@ -59,3 +62,52 @@ def test_parse_cotahist_public_fixed_width_record() -> None:
     assert bar.volume == 1_234_567.89
     assert bar.adjusted_close is None
     assert not bar.is_adjusted
+
+
+def test_cotahist_download_retries_transport_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.RemoteProtocolError("incomplete response", request=request)
+        return httpx.Response(200, content=b"complete-archive", request=request)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.Client
+
+    def client_factory(*args: object, **kwargs: object) -> httpx.Client:
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client_factory)
+
+    collector = B3CotahistCollector(max_attempts=3)
+    assert collector.download_year_archive(2025) == b"complete-archive"
+    assert attempts == 2
+
+
+def test_cotahist_download_does_not_retry_non_retryable_4xx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(404, request=request)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.Client
+
+    def client_factory(*args: object, **kwargs: object) -> httpx.Client:
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client_factory)
+
+    collector = B3CotahistCollector(max_attempts=3)
+    with pytest.raises(httpx.HTTPStatusError):
+        collector.download_year_archive(2025)
+    assert attempts == 1
