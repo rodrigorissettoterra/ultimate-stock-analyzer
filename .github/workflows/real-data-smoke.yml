@@ -56,7 +56,7 @@ jobs:
             https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv || true
           echo "== B3 IPv4 =="
           curl -4 -I -L --connect-timeout 10 --max-time 20 \
-            https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A2025.ZIP || true
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A${{ steps.year.outputs.value }}.ZIP" || true
       - name: Run official-source smoke test
         env:
           PYTHONUNBUFFERED: "1"
