@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 
@@ -424,7 +425,7 @@ def bank_contract_values(record: BankPrudentialAnnualRecord) -> dict[str, float]
 def _rows(content: bytes) -> list[dict[str, Any]]:
     payload = json.loads(content)
     if not isinstance(payload, dict) or not isinstance(payload.get("value"), list):
-        raise ValueError("IFData response must contain a value list")
+        raise TypeError("IFData response must contain a value list")
     return [dict(row) for row in payload["value"] if isinstance(row, dict)]
 
 
