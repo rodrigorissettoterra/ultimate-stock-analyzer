@@ -13,6 +13,7 @@ from ultimate_stock_analyzer.bootstrap.public_data import (
 from ultimate_stock_analyzer.domain.master import (
     FinancialStatementLine,
     IssuerRecord,
+    SectorClassificationRecord,
     SecurityRecord,
 )
 
@@ -68,6 +69,21 @@ class BootstrapDataset:
         for artifact in self._many("cvm_financial_statements"):
             rows.extend(self._read_models(artifact, FinancialStatementLine))
         return rows
+
+    def sector_classifications(self) -> list[SectorClassificationRecord]:
+        rows: list[SectorClassificationRecord] = []
+        for artifact in self._many("b3_sector_classification"):
+            rows.extend(self._read_models(artifact, SectorClassificationRecord))
+        by_company: dict[str, SectorClassificationRecord] = {}
+        for row in rows:
+            existing = by_company.get(row.company_id)
+            if existing is not None and existing != row:
+                raise ValueError(
+                    "bootstrap contains conflicting sector classifications for "
+                    f"{row.company_id}"
+                )
+            by_company[row.company_id] = row
+        return list(by_company.values())
 
     def _one(self, name: str) -> BootstrapArtifact:
         artifacts = self._many(name)

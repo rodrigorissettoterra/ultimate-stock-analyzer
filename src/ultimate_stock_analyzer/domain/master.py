@@ -35,6 +35,31 @@ class SecurityRecord(BaseModel):
     source_document: str | None = None
 
 
+class SectorClassificationRecord(BaseModel):
+    """Current B3 economic classification snapshot for one CVM issuer.
+
+    The official B3 workbook is a current snapshot, not a historical point-in-time
+    series. ``point_in_time_eligible`` therefore remains false by contract so the
+    record cannot silently be reused as historical sector evidence in walk-forward
+    tests.
+    """
+
+    company_id: str
+    cvm_code: int
+    cnpj: str | None = None
+    issuer_code: str
+    trading_name: str
+    sector: str
+    subsector: str
+    segment: str
+    listing_segment: str | None = None
+    collected_at: datetime
+    source: str = "B3_INDUSTRY_CLASSIFICATION"
+    source_document: str = "ClassifSetorial.xlsx"
+    snapshot_scope: str = "CURRENT"
+    point_in_time_eligible: bool = False
+
+
 class FinancialStatementLine(BaseModel):
     company_id: str
     cvm_code: int
