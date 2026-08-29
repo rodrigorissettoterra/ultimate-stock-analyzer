@@ -52,11 +52,20 @@ def normalize_fca_securities(
     collected_at: datetime,
     source_document: str,
 ) -> list[SecurityRecord]:
+    """Normalize the CVM FCA security/ticker table.
+
+    Current FCA files use descriptive CamelCase headers (for example,
+    ``Codigo_Negociacao`` and ``Data_Referencia``), while older fixtures and
+    historical extracts can use abbreviated uppercase names. Both are accepted.
+    Identity must already be resolved to the official ``CD_CVM`` before this
+    function is called; the ingestion service performs the CNPJ->CD_CVM join.
+    """
     rows: list[SecurityRecord] = []
     for record in frame.to_dict(orient="records"):
         ticker = _as_text(
             _pick(
                 record,
+                "Codigo_Negociacao",
                 "CODIGO_NEGOCIACAO",
                 "CD_NEGOCIACAO",
                 "COD_NEGOCIACAO",
@@ -67,28 +76,60 @@ def normalize_fca_securities(
             continue
         cvm_code = _as_int(_pick(record, "CD_CVM"))
         available = _as_datetime(
-            _pick(record, "DT_RECEB", "DT_ENTREGA", "DT_APRESENTACAO")
+            _pick(
+                record,
+                "DT_RECEB",
+                "DT_RECEB_META",
+                "Data_Recebimento",
+                "Data_Entrega",
+                "Data_Apresentacao",
+                "DT_ENTREGA",
+                "DT_APRESENTACAO",
+            )
         )
         rows.append(
             SecurityRecord(
                 company_id=f"cvm:{cvm_code}",
                 ticker=ticker.upper(),
-                isin=_as_text(_pick(record, "ISIN", "CD_ISIN")),
+                isin=_as_text(_pick(record, "ISIN", "CD_ISIN", "Codigo_ISIN")),
                 security_type=_as_text(
-                    _pick(record, "TP_VALOR_MOBILIARIO", "DS_VALOR_MOBILIARIO")
+                    _pick(
+                        record,
+                        "Valor_Mobiliario",
+                        "TP_VALOR_MOBILIARIO",
+                        "DS_VALOR_MOBILIARIO",
+                    )
                 ),
-                market=_as_text(_pick(record, "DS_MERCADO", "MERCADO")),
+                market=_as_text(_pick(record, "Mercado", "DS_MERCADO", "MERCADO")),
                 administrator=_as_text(
-                    _pick(record, "SG_ENTID_ADMIN", "ENTIDADE_ADMINISTRADORA")
+                    _pick(
+                        record,
+                        "Sigla_Entidade_Administradora",
+                        "Entidade_Administradora",
+                        "SG_ENTID_ADMIN",
+                        "ENTIDADE_ADMINISTRADORA",
+                    )
                 ),
                 trading_start=_as_date(
-                    _pick(record, "DT_INI_NEGOCIACAO", "DT_INICIO_NEGOCIACAO")
+                    _pick(
+                        record,
+                        "Data_Inicio_Negociacao",
+                        "DT_INI_NEGOCIACAO",
+                        "DT_INICIO_NEGOCIACAO",
+                    )
                 ),
                 trading_end=_as_date(
-                    _pick(record, "DT_FIM_NEGOCIACAO", "DT_TERMINO_NEGOCIACAO")
+                    _pick(
+                        record,
+                        "Data_Fim_Negociacao",
+                        "DT_FIM_NEGOCIACAO",
+                        "DT_TERMINO_NEGOCIACAO",
+                    )
                 ),
-                reference_date=_as_date(_pick(record, "DT_REFER")),
-                version=_as_int(_pick(record, "VERSAO"), default=0),
+                reference_date=_as_date(
+                    _pick(record, "Data_Referencia", "DT_REFER")
+                ),
+                version=_as_int(_pick(record, "Versao", "VERSAO"), default=0),
                 available_from=available,
                 collected_at=_aware(collected_at),
                 source_document=source_document,
@@ -109,7 +150,10 @@ def attach_document_metadata(
         for column in ("ID_DOC", "DT_RECEB", "LINK_DOC")
         if column in metadata_frame.columns
     ]
-    metadata = metadata_frame[metadata_columns].drop_duplicates(subset=["ID_DOC"], keep="last")
+    metadata = metadata_frame[metadata_columns].drop_duplicates(
+        subset=["ID_DOC"],
+        keep="last",
+    )
     return statement_frame.merge(metadata, on="ID_DOC", how="left", suffixes=("", "_META"))
 
 
@@ -136,7 +180,9 @@ def normalize_statement(
                 company_id=f"cvm:{cvm_code}",
                 cvm_code=cvm_code,
                 cnpj=_as_text(_pick(record, "CNPJ_CIA")),
-                company_name=_required_text(_pick(record, "DENOM_CIA", "DENOM_SOCIAL")),
+                company_name=_required_text(
+                    _pick(record, "DENOM_CIA", "DENOM_SOCIAL")
+                ),
                 document_type=document_type.upper(),
                 statement=statement.upper(),
                 consolidation_scope=_as_text(_pick(record, "GRUPO_DFP")),
@@ -170,7 +216,10 @@ def point_in_time_lines(
         for line in lines
         if line.available_from is not None and _aware(line.available_from) <= cutoff
     ]
-    winners: dict[tuple[str, str, str, str | None, date, str, str | None], FinancialStatementLine] = {}
+    winners: dict[
+        tuple[str, str, str, str | None, date, str, str | None],
+        FinancialStatementLine,
+    ] = {}
     for line in eligible:
         key = (
             line.company_id,
