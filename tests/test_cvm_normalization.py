@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pandas as pd
+import pytest
 
 from ultimate_stock_analyzer.normalization.cvm import (
     attach_document_metadata,
@@ -75,6 +76,80 @@ def test_statement_normalization_applies_scale_and_metadata() -> None:
     assert lines[0].value_brl == 1_250_500.0
     assert lines[0].available_from == datetime(2026, 2, 20, 18, 30, tzinfo=UTC)
     assert lines[0].version == 2
+
+
+def test_statement_metadata_uses_official_filing_natural_key_without_id_doc() -> None:
+    statement = pd.DataFrame(
+        [
+            {
+                "CD_CVM": "0012345",
+                "CNPJ_CIA": "00.000.000/0001-00",
+                "DENOM_CIA": "COMPANHIA TESTE S.A.",
+                "DT_REFER": "2025-12-31",
+                "VERSAO": "2",
+                "GRUPO_DFP": "DF Consolidado",
+                "ORDEM_EXERC": "ÚLTIMO",
+                "DT_INI_EXERC": "2025-01-01",
+                "DT_FIM_EXERC": "2025-12-31",
+                "CD_CONTA": "3.01",
+                "DS_CONTA": "Receita",
+                "VL_CONTA": 100,
+                "ESCALA_MOEDA": "UNIDADE",
+            }
+        ]
+    )
+    metadata = pd.DataFrame(
+        [
+            {
+                "CD_CVM": 12345,
+                "DT_REFER": "2025-12-31",
+                "VERSAO": 2,
+                "ID_DOC": 991,
+                "DT_RECEB": "2026-03-05 17:42:00",
+                "LINK_DOC": "https://example.invalid/filing",
+            }
+        ]
+    )
+
+    joined = attach_document_metadata(statement, metadata)
+    lines = normalize_statement(
+        joined,
+        document_type="DFP",
+        statement="DRE",
+        collected_at=datetime(2026, 8, 29, tzinfo=UTC),
+        source_document="dfp_cia_aberta_DRE_con_2025.csv",
+    )
+
+    assert lines[0].document_id == 991
+    assert lines[0].received_at == datetime(2026, 3, 5, 17, 42, tzinfo=UTC)
+    assert lines[0].available_from == datetime(2026, 3, 5, 17, 42, tzinfo=UTC)
+
+
+def test_statement_metadata_rejects_ambiguous_official_filing_key() -> None:
+    statement = pd.DataFrame(
+        [{"CD_CVM": 12345, "DT_REFER": "2025-12-31", "VERSAO": 2}]
+    )
+    metadata = pd.DataFrame(
+        [
+            {
+                "CD_CVM": 12345,
+                "DT_REFER": "2025-12-31",
+                "VERSAO": 2,
+                "ID_DOC": 991,
+                "DT_RECEB": "2026-03-05",
+            },
+            {
+                "CD_CVM": 12345,
+                "DT_REFER": "2025-12-31",
+                "VERSAO": 2,
+                "ID_DOC": 992,
+                "DT_RECEB": "2026-03-06",
+            },
+        ]
+    )
+
+    with pytest.raises(ValueError, match="ambiguous CVM filing metadata"):
+        attach_document_metadata(statement, metadata)
 
 
 def test_point_in_time_keeps_latest_revision_available_at_cutoff() -> None:
