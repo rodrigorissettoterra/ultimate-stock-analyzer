@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import gzip
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 from statistics import mean
@@ -13,6 +13,7 @@ from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
 from ultimate_stock_analyzer.domain.master import (
     FinancialStatementLine,
     IssuerRecord,
+    SectorClassificationRecord,
     SecurityRecord,
 )
 from ultimate_stock_analyzer.fundamentals.contracts import (
@@ -20,6 +21,20 @@ from ultimate_stock_analyzer.fundamentals.contracts import (
     evaluate_contract,
 )
 from ultimate_stock_analyzer.fundamentals.cvm_accounts import extract_fixed_accounts
+from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
+
+CoverageApplicability = Literal[
+    "GENERAL_CORPORATE_APPLICABLE",
+    "SPECIALIZED_ACCOUNTING_CONTRACT_REQUIRED",
+    "UNRESOLVED_SECTOR_CLASSIFICATION",
+    "UNRESOLVED_SECTOR_MODEL",
+]
+SummaryApplicability = Literal[
+    "CURRENT_SECTOR_MODEL_RESOLVED",
+    "PARTIAL_SECTOR_MODEL_RESOLUTION",
+    "UNRESOLVED_SECTOR_CLASSIFICATION",
+]
+SPECIALIZED_ACCOUNTING_MODELS = frozenset({"banks", "insurance"})
 
 
 class FundamentalCoverageRecord(BaseModel):
@@ -30,9 +45,15 @@ class FundamentalCoverageRecord(BaseModel):
     reference_date: date
     fiscal_year: int
     contract: str = GENERAL_CORPORATE_CONTRACT.name
-    applicability: Literal["UNRESOLVED_SECTOR_CLASSIFICATION"] = (
-        "UNRESOLVED_SECTOR_CLASSIFICATION"
-    )
+    applicability: CoverageApplicability = "UNRESOLVED_SECTOR_CLASSIFICATION"
+    sector: str | None = None
+    subsector: str | None = None
+    segment: str | None = None
+    listing_segment: str | None = None
+    sector_model_id: str | None = None
+    sector_model_reason: str | None = None
+    sector_model_is_fallback: bool | None = None
+    sector_classification_point_in_time_eligible: bool | None = None
     extracted_accounts: int = Field(ge=0)
     critical_coverage: float = Field(ge=0.0, le=1.0)
     total_coverage: float = Field(ge=0.0, le=1.0)
@@ -47,36 +68,51 @@ class FundamentalCoverageRecord(BaseModel):
 
 
 class FundamentalCoverageSummary(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     bootstrap_run_id: str
     bootstrap_manifest_sha256: str
     generated_at: datetime
     contract: str = GENERAL_CORPORATE_CONTRACT.name
-    applicability: Literal["UNRESOLVED_SECTOR_CLASSIFICATION"] = (
-        "UNRESOLVED_SECTOR_CLASSIFICATION"
-    )
+    applicability: SummaryApplicability = "UNRESOLVED_SECTOR_CLASSIFICATION"
     companies: int = Field(ge=0)
     company_years: int = Field(ge=0)
     mapped_tickers: int = Field(ge=0)
     critical_complete_company_years: int = Field(ge=0)
     point_in_time_critical_complete_company_years: int = Field(ge=0)
     longitudinal_pair_ready_company_years: int = Field(ge=0)
+    resolved_sector_model_company_years: int = Field(ge=0)
+    specialized_contract_required_company_years: int = Field(ge=0)
+    general_corporate_applicable_company_years: int = Field(ge=0)
     mean_critical_coverage: float = Field(ge=0.0, le=1.0)
     mean_total_coverage: float = Field(ge=0.0, le=1.0)
     coverage_buckets: dict[str, int]
+    sector_model_counts: dict[str, int]
     warnings: list[str]
 
 
 class FundamentalCoverageProfiler:
     """Measure evidence readiness without producing an investment score."""
 
-    def __init__(self, dataset: BootstrapDataset) -> None:
+    def __init__(
+        self,
+        dataset: BootstrapDataset,
+        *,
+        sector_registry: SectorModelRegistry | None = None,
+    ) -> None:
         self.dataset = dataset
+        self.sector_registry = sector_registry
 
-    def analyze(self, *, generated_at: datetime) -> tuple[list[FundamentalCoverageRecord], FundamentalCoverageSummary]:
+    def analyze(
+        self,
+        *,
+        generated_at: datetime,
+    ) -> tuple[list[FundamentalCoverageRecord], FundamentalCoverageSummary]:
         issuers = {issuer.company_id: issuer for issuer in self.dataset.issuers()}
         securities = self.dataset.securities()
         statements = self.dataset.statements()
+        classifications = {
+            item.company_id: item for item in self.dataset.sector_classifications()
+        }
 
         by_period: dict[tuple[str, date], list[FinancialStatementLine]] = defaultdict(list)
         for line in statements:
@@ -124,6 +160,7 @@ class FundamentalCoverageProfiler:
                     if line.source_document
                 }
             )
+            sector_context = self._sector_context(classifications.get(company_id))
             records.append(
                 FundamentalCoverageRecord(
                     company_id=company_id,
@@ -132,6 +169,17 @@ class FundamentalCoverageProfiler:
                     tickers=_tickers_for_period(securities, company_id, reference_date),
                     reference_date=reference_date,
                     fiscal_year=reference_date.year,
+                    applicability=sector_context["applicability"],
+                    sector=sector_context["sector"],
+                    subsector=sector_context["subsector"],
+                    segment=sector_context["segment"],
+                    listing_segment=sector_context["listing_segment"],
+                    sector_model_id=sector_context["sector_model_id"],
+                    sector_model_reason=sector_context["sector_model_reason"],
+                    sector_model_is_fallback=sector_context["sector_model_is_fallback"],
+                    sector_classification_point_in_time_eligible=sector_context[
+                        "point_in_time_eligible"
+                    ],
                     extracted_accounts=len(extraction.values),
                     critical_coverage=coverage.critical_coverage,
                     total_coverage=coverage.total_coverage,
@@ -147,6 +195,57 @@ class FundamentalCoverageProfiler:
         _mark_longitudinal_pairs(records)
         summary = _summary(records, self.dataset, generated_at)
         return records, summary
+
+    def _sector_context(
+        self,
+        classification: SectorClassificationRecord | None,
+    ) -> dict[str, object]:
+        if classification is None:
+            return {
+                "applicability": "UNRESOLVED_SECTOR_CLASSIFICATION",
+                "sector": None,
+                "subsector": None,
+                "segment": None,
+                "listing_segment": None,
+                "sector_model_id": None,
+                "sector_model_reason": None,
+                "sector_model_is_fallback": None,
+                "point_in_time_eligible": None,
+            }
+        base: dict[str, object] = {
+            "sector": classification.sector,
+            "subsector": classification.subsector,
+            "segment": classification.segment,
+            "listing_segment": classification.listing_segment,
+            "point_in_time_eligible": classification.point_in_time_eligible,
+        }
+        if self.sector_registry is None:
+            return {
+                **base,
+                "applicability": "UNRESOLVED_SECTOR_MODEL",
+                "sector_model_id": None,
+                "sector_model_reason": None,
+                "sector_model_is_fallback": None,
+            }
+        selection = self.sector_registry.select(
+            {
+                "sector": classification.sector,
+                "subsector": classification.subsector,
+                "segment": classification.segment,
+            }
+        )
+        applicability: CoverageApplicability = (
+            "SPECIALIZED_ACCOUNTING_CONTRACT_REQUIRED"
+            if selection.model_id in SPECIALIZED_ACCOUNTING_MODELS
+            else "GENERAL_CORPORATE_APPLICABLE"
+        )
+        return {
+            **base,
+            "applicability": applicability,
+            "sector_model_id": selection.model_id,
+            "sector_model_reason": selection.reason,
+            "sector_model_is_fallback": selection.is_fallback,
+        }
 
     def write(
         self,
@@ -226,6 +325,20 @@ def _summary(
         record.point_in_time_critical_coverage == 1.0 for record in records
     )
     longitudinal = sum(record.longitudinal_pair_ready for record in records)
+    resolved = sum(record.sector_model_id is not None for record in records)
+    specialized = sum(
+        record.applicability == "SPECIALIZED_ACCOUNTING_CONTRACT_REQUIRED"
+        for record in records
+    )
+    general = sum(
+        record.applicability == "GENERAL_CORPORATE_APPLICABLE" for record in records
+    )
+    if not records or resolved == 0:
+        applicability: SummaryApplicability = "UNRESOLVED_SECTOR_CLASSIFICATION"
+    elif resolved == len(records):
+        applicability = "CURRENT_SECTOR_MODEL_RESOLVED"
+    else:
+        applicability = "PARTIAL_SECTOR_MODEL_RESOLUTION"
     buckets = {
         "critical_100pct": critical_complete,
         "critical_90_to_99pct": sum(
@@ -236,22 +349,31 @@ def _summary(
         ),
         "critical_below_75pct": sum(record.critical_coverage < 0.75 for record in records),
     }
+    model_counts = Counter(
+        record.sector_model_id for record in records if record.sector_model_id is not None
+    )
     return FundamentalCoverageSummary(
         bootstrap_run_id=dataset.manifest.run_id,
         bootstrap_manifest_sha256=dataset.manifest_sha256,
         generated_at=generated_at,
+        applicability=applicability,
         companies=len({record.company_id for record in records}),
         company_years=len(records),
         mapped_tickers=len({ticker for record in records for ticker in record.tickers}),
         critical_complete_company_years=critical_complete,
         point_in_time_critical_complete_company_years=point_in_time_complete,
         longitudinal_pair_ready_company_years=longitudinal,
+        resolved_sector_model_company_years=resolved,
+        specialized_contract_required_company_years=specialized,
+        general_corporate_applicable_company_years=general,
         mean_critical_coverage=mean(record.critical_coverage for record in records) if records else 0.0,
         mean_total_coverage=mean(record.total_coverage for record in records) if records else 0.0,
         coverage_buckets=buckets,
+        sector_model_counts=dict(sorted(model_counts.items())),
         warnings=[
-            "Coverage is measured against the general-corporate accounting contract only.",
-            "Sector applicability is unresolved until sector/subsector/segment data is materialized.",
-            "Coverage readiness is not an investment score or recommendation.",
+            "Accounting coverage is still measured against the general-corporate contract.",
+            "For banks and insurers this coverage is diagnostic only; a specialized accounting contract is required before rankability.",
+            "B3 sector classification is a current collection-time snapshot and is not point-in-time eligible for historical walk-forward/backtests.",
+            "Coverage readiness and sector routing are not investment scores or recommendations.",
         ],
     )

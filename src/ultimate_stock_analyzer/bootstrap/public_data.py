@@ -11,10 +11,14 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from ultimate_stock_analyzer.collectors.b3_classification import (
+    B3IndustryClassificationCollector,
+)
 from ultimate_stock_analyzer.collectors.cvm import CVMCollector
 from ultimate_stock_analyzer.domain.master import (
     FinancialStatementLine,
     IssuerRecord,
+    SectorClassificationRecord,
     SecurityRecord,
 )
 from ultimate_stock_analyzer.market.prices import B3CotahistCollector, PriceBar
@@ -31,6 +35,7 @@ class PublicDataBootstrapPlan:
     statements: tuple[str, ...] = DEFAULT_DFP_STATEMENTS
     document_type: str = "DFP"
     scope_token: str = "con"
+    include_current_sector_classification: bool = False
 
     def __post_init__(self) -> None:
         current_year = datetime.now(UTC).year
@@ -79,6 +84,7 @@ class PublicDataBootstrapManifest(BaseModel):
     requested_tickers: list[str]
     statements: list[str]
     source_policy: str = "official_free_only"
+    includes_current_sector_classification: bool = False
     artifacts: list[BootstrapArtifact] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
@@ -129,11 +135,26 @@ class _PriceArchiveSource(Protocol):
     ) -> list[PriceBar]: ...
 
 
+class _B3ClassificationSource(Protocol):
+    def download_workbook(self) -> bytes: ...
+
+    def download_company_catalog_archive(self) -> bytes: ...
+
+    def normalize(
+        self,
+        workbook_content: bytes,
+        company_catalog_archive: bytes,
+        *,
+        collected_at: datetime,
+    ) -> list[SectorClassificationRecord]: ...
+
+
 class PublicDataBootstrapService:
     """Materialize exact public-source payloads and normalized historical records.
 
     This stage deliberately stops before investment scoring. Its output is the auditable,
     point-in-time input layer required by later universe scoring and walk-forward runs.
+    Current B3 sector classification is optional because it is not historical evidence.
     """
 
     def __init__(
@@ -143,12 +164,16 @@ class PublicDataBootstrapService:
         cvm_source: _CVMArchiveSource | None = None,
         cvm_normalizer: _CVMArchiveNormalizer | None = None,
         price_source: _PriceArchiveSource | None = None,
+        classification_source: _B3ClassificationSource | None = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         collector = cvm_source or CVMCollector()
         self.cvm_source = collector
         self.cvm_normalizer = cvm_normalizer or CVMIngestionService(collector=collector)
         self.price_source = price_source or B3CotahistCollector()
+        self.classification_source = (
+            classification_source or B3IndustryClassificationCollector()
+        )
 
     def run(
         self,
@@ -247,6 +272,62 @@ class PublicDataBootstrapService:
             counts["issuers"] = len(issuers)
             counts["securities"] = sum(len(items) for items in securities_by_year.values())
 
+            if plan.include_current_sector_classification:
+                workbook_bytes = self.classification_source.download_workbook()
+                catalog_bytes = self.classification_source.download_company_catalog_archive()
+                artifacts.append(
+                    _write_bytes(
+                        run_dir,
+                        Path("raw/b3/ClassifSetorial.xlsx"),
+                        workbook_bytes,
+                        name="b3_sector_classification_raw",
+                        source="B3_INDUSTRY_CLASSIFICATION",
+                    )
+                )
+                artifacts.append(
+                    _write_bytes(
+                        run_dir,
+                        Path("raw/b3/company_catalog_pages.zip"),
+                        catalog_bytes,
+                        name="b3_company_catalog_raw",
+                        source="B3_LISTED_COMPANIES",
+                    )
+                )
+                classifications = self.classification_source.normalize(
+                    workbook_bytes,
+                    catalog_bytes,
+                    collected_at=started_at,
+                )
+                if plan.tickers:
+                    classifications = [
+                        item
+                        for item in classifications
+                        if item.company_id in selected_company_ids
+                    ]
+                    missing_company_ids = sorted(
+                        selected_company_ids
+                        - {item.company_id for item in classifications}
+                    )
+                    if missing_company_ids:
+                        warnings.append(
+                            "Current B3 sector classification is missing for selected CVM "
+                            "companies: " + ", ".join(missing_company_ids)
+                        )
+                artifacts.append(
+                    _write_jsonl_gz(
+                        run_dir,
+                        Path("normalized/b3/industry_classification_current.jsonl.gz"),
+                        classifications,
+                        name="b3_sector_classification",
+                        source="B3_INDUSTRY_CLASSIFICATION",
+                    )
+                )
+                counts["sector_classifications"] = len(classifications)
+                warnings.append(
+                    "B3 sector classification is a current collection-time snapshot and "
+                    "is not point-in-time eligible for historical walk-forward/backtests."
+                )
+
             statement_count = 0
             price_count = 0
             for year in range(plan.start_year, plan.end_year + 1):
@@ -322,6 +403,9 @@ class PublicDataBootstrapService:
                 end_year=plan.end_year,
                 requested_tickers=list(plan.tickers),
                 statements=list(plan.statements),
+                includes_current_sector_classification=(
+                    plan.include_current_sector_classification
+                ),
                 artifacts=artifacts,
                 counts=counts,
                 warnings=warnings,
@@ -340,6 +424,9 @@ class PublicDataBootstrapService:
                 end_year=plan.end_year,
                 requested_tickers=list(plan.tickers),
                 statements=list(plan.statements),
+                includes_current_sector_classification=(
+                    plan.include_current_sector_classification
+                ),
                 artifacts=artifacts,
                 counts=counts,
                 warnings=warnings,
