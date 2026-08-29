@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Ultimate Stock Analyzer</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#ranking">Ir para o ranking</a>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Brazilian Equity Research</p>
+      <h1>Ultimate Stock Analyzer</h1>
+      <p class="subtitle">Qualidade da empresa, atratividade do investimento e momento de entrada — separados.</p>
+    </div>
+    <div class="api-state" id="apiState" role="status" aria-live="polite">Conectando…</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel filters" aria-labelledby="filtersTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Filtros</p>
+          <h2 id="filtersTitle">Universo analisado</h2>
+        </div>
+        <button type="button" class="ghost" id="resetFilters">Limpar</button>
+      </div>
+      <form id="filterForm" class="filter-grid">
+        <label>Setor
+          <input id="sector" name="sector" type="text" autocomplete="off" placeholder="Ex.: Banks">
+        </label>
+        <label>Status
+          <select id="status" name="status">
+            <option value="">Todos</option>
+            <option>VERY_ATTRACTIVE</option>
+            <option>ATTRACTIVE</option>
+            <option>WATCH</option>
+            <option>WAIT</option>
+            <option>AVOID</option>
+            <option>BLOCKED</option>
+            <option>INCONCLUSIVE</option>
+          </select>
+        </label>
+        <label>Atratividade mínima
+          <input id="minScore" name="minScore" type="number" min="0" max="100" step="1" placeholder="0–100">
+        </label>
+        <label class="checkbox-label">
+          <input id="rankableOnly" name="rankableOnly" type="checkbox" checked>
+          Somente análises ranqueáveis
+        </label>
+        <button type="submit" class="primary">Aplicar filtros</button>
+      </form>
+    </section>
+
+    <section class="metrics" aria-label="Resumo do ranking">
+      <article class="metric-card"><span>Ativos</span><strong id="assetCount">—</strong></article>
+      <article class="metric-card"><span>Data-base</span><strong id="asOf">—</strong></article>
+      <article class="metric-card"><span>Maior atratividade</span><strong id="topScore">—</strong></article>
+      <article class="metric-card"><span>Maior confiança</span><strong id="topConfidence">—</strong></article>
+    </section>
+
+    <section class="panel" id="ranking" aria-labelledby="rankingTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Ranking</p>
+          <h2 id="rankingTitle">Atratividade do investimento</h2>
+        </div>
+        <p class="hint">Ordenação primária: Investment Attractiveness</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Ativo</th>
+              <th scope="col">Preço</th>
+              <th scope="col">DY TTM</th>
+              <th scope="col">Qualidade</th>
+              <th scope="col">Atratividade</th>
+              <th scope="col">Entrada</th>
+              <th scope="col">Confiança</th>
+              <th scope="col">Aluguel</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody id="rankingBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="emptyState" hidden>Nenhuma análise corresponde aos filtros atuais.</div>
+    </section>
+
+    <section class="panel validation" aria-labelledby="validationTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Validação</p>
+          <h2 id="validationTitle">Backtests disponíveis</h2>
+        </div>
+      </div>
+      <div id="backtests" class="backtest-grid"></div>
+    </section>
+  </main>
+
+  <dialog id="detailDialog" aria-labelledby="detailTitle">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow" id="detailTicker">Ativo</p>
+        <h2 id="detailTitle">Detalhes</h2>
+      </div>
+      <button type="button" class="ghost" id="closeDialog" aria-label="Fechar detalhes">Fechar</button>
+    </div>
+    <div id="detailContent"></div>
+  </dialog>
+
+  <footer>
+    <p>Ferramenta de apoio à pesquisa. Não constitui recomendação individualizada nem garantia de retorno.</p>
+  </footer>
+  <script src="./app.js" defer></script>
+</body>
+</html>
