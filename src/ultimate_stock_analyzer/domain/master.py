@@ -60,6 +60,53 @@ class SectorClassificationRecord(BaseModel):
     point_in_time_eligible: bool = False
 
 
+class BankPrudentialAnnualRecord(BaseModel):
+    """Annual bank evidence normalized from the official BCB IFData API.
+
+    Identity is joined through the CVM issuer CNPJ root to the IFData prudential
+    conglomerate leader. IFData historical rows are collected from the API's latest
+    state and do not expose a revision history, so ``point_in_time_eligible`` remains
+    false for strict historical backtests even when an estimated publication date is
+    available.
+    """
+
+    company_id: str
+    cvm_code: int
+    cnpj: str | None = None
+    cnpj_root: str
+    fiscal_year: int
+    reference_date: date
+    ifdata_cod_inst: str
+    ifdata_name: str
+    institution_type: int = 1
+    source_scope: str = "PRUDENTIAL_CONGLOMERATE"
+
+    total_assets: float | None = None
+    prior_total_assets: float | None = None
+    equity: float | None = None
+    prior_equity: float | None = None
+    gross_credit_portfolio: float | None = None
+    prior_gross_credit_portfolio: float | None = None
+    annual_net_income: float | None = None
+    annual_credit_loss_result: float | None = None
+
+    basel_ratio: float | None = None
+    tier1_ratio: float | None = None
+    core_equity_tier1_ratio: float | None = None
+    leverage_ratio: float | None = None
+
+    roe: float | None = None
+    roa: float | None = None
+    cost_of_credit: float | None = None
+    equity_to_assets: float | None = None
+
+    available_from_estimate: datetime | None = None
+    collected_at: datetime
+    source: str = "BCB_IFDATA"
+    source_documents: tuple[str, ...] = ()
+    point_in_time_eligible: bool = False
+
+
 class FinancialStatementLine(BaseModel):
     company_id: str
     cvm_code: int

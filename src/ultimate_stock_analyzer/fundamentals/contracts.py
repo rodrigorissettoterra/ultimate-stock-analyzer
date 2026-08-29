@@ -44,6 +44,28 @@ GENERAL_CORPORATE_CONTRACT = FundamentalContract(
 )
 
 
+BANK_PRUDENTIAL_CONTRACT = FundamentalContract(
+    name="bank_prudential_ifdata_v1",
+    critical_inputs=(
+        "total_assets",
+        "prior_total_assets",
+        "equity",
+        "prior_equity",
+        "gross_credit_portfolio",
+        "prior_gross_credit_portfolio",
+        "annual_net_income",
+        "annual_credit_loss_result",
+        "basel_ratio",
+        "tier1_ratio",
+    ),
+    supporting_inputs=(
+        "core_equity_tier1_ratio",
+        "leverage_ratio",
+    ),
+    excluded_business_models=(),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ContractCoverage:
     contract: str
