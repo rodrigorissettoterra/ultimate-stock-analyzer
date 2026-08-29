@@ -16,8 +16,8 @@
 - **M13 Macro** — BCB/IBGE and sector sensitivity/scenarios. **DONE.**
 - **M14 Integrated score** — company quality, investment attractiveness and entry timing. **DONE.**
 - **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison. **DONE.**
-- **M16 Walk-forward** — weight calibration without look-ahead/overfit. **DONE candidate.**
-- **M17 API** — stable read/query endpoints.
+- **M16 Walk-forward** — calibration framework with strict OOS promotion gates. **DONE.**
+- **M17 API** — stable read/query endpoints and persistence boundary. **DONE candidate.**
 - **M18 Dashboard** — ranking, company pages and comparisons.
 - **M19 Conversational Agent** — evidence-backed natural-language analysis.
 - **M20 Production** — scheduling, observability, backups and runbooks.
