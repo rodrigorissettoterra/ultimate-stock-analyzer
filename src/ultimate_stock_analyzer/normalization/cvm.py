@@ -12,6 +12,8 @@ from ultimate_stock_analyzer.domain.master import (
 )
 
 CVM_REGISTRY_URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
+_FILING_NATURAL_KEY = ("CD_CVM", "DT_REFER", "VERSAO")
+_METADATA_FIELDS = ("ID_DOC", "DT_RECEB", "LINK_DOC")
 
 
 def company_id_from_cvm_code(value: Any) -> str:
@@ -142,19 +144,81 @@ def attach_document_metadata(
     statement_frame: pd.DataFrame,
     metadata_frame: pd.DataFrame,
 ) -> pd.DataFrame:
-    if "ID_DOC" not in statement_frame.columns or "ID_DOC" not in metadata_frame.columns:
+    """Attach filing metadata without synthesizing publication timestamps.
+
+    CVM statement members normally do not carry ``ID_DOC``. The yearly DFP/ITR
+    summary member does and is uniquely identified by ``CD_CVM``, ``DT_REFER``
+    and ``VERSAO``. Prefer the direct document-id join when both sides expose it;
+    otherwise use that official filing key. Ambiguous filing metadata fails closed.
+    """
+    if metadata_frame.empty:
         return statement_frame.copy()
 
-    metadata_columns = [
+    if "ID_DOC" in statement_frame.columns and "ID_DOC" in metadata_frame.columns:
+        return _merge_document_metadata(
+            statement_frame,
+            metadata_frame,
+            join_keys=("ID_DOC",),
+        )
+
+    if not all(column in statement_frame.columns for column in _FILING_NATURAL_KEY):
+        return statement_frame.copy()
+    if not all(column in metadata_frame.columns for column in _FILING_NATURAL_KEY):
+        return statement_frame.copy()
+
+    statement = statement_frame.copy()
+    metadata = metadata_frame.copy()
+    join_keys = ("__CVM_CODE", "__REFERENCE_DATE", "__VERSION")
+    statement[join_keys[0]] = _normalized_cvm_code(statement["CD_CVM"])
+    statement[join_keys[1]] = _normalized_reference_date(statement["DT_REFER"])
+    statement[join_keys[2]] = _normalized_version(statement["VERSAO"])
+    metadata[join_keys[0]] = _normalized_cvm_code(metadata["CD_CVM"])
+    metadata[join_keys[1]] = _normalized_reference_date(metadata["DT_REFER"])
+    metadata[join_keys[2]] = _normalized_version(metadata["VERSAO"])
+
+    merged = _merge_document_metadata(statement, metadata, join_keys=join_keys)
+    return merged.drop(columns=list(join_keys))
+
+
+def _merge_document_metadata(
+    statement_frame: pd.DataFrame,
+    metadata_frame: pd.DataFrame,
+    *,
+    join_keys: tuple[str, ...],
+) -> pd.DataFrame:
+    metadata_columns = [*join_keys]
+    metadata_columns.extend(
         column
-        for column in ("ID_DOC", "DT_RECEB", "LINK_DOC")
-        if column in metadata_frame.columns
-    ]
-    metadata = metadata_frame[metadata_columns].drop_duplicates(
-        subset=["ID_DOC"],
-        keep="last",
+        for column in _METADATA_FIELDS
+        if column in metadata_frame.columns and column not in join_keys
     )
-    return statement_frame.merge(metadata, on="ID_DOC", how="left", suffixes=("", "_META"))
+    metadata = metadata_frame[metadata_columns].drop_duplicates()
+    duplicated = metadata.duplicated(subset=list(join_keys), keep=False)
+    if duplicated.any():
+        examples = metadata.loc[duplicated, list(join_keys)].head(3).to_dict("records")
+        raise ValueError(
+            "ambiguous CVM filing metadata for join key; "
+            f"examples={examples}"
+        )
+    return statement_frame.merge(
+        metadata,
+        on=list(join_keys),
+        how="left",
+        suffixes=("", "_META"),
+        validate="many_to_one",
+    )
+
+
+def _normalized_cvm_code(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce").astype("Int64")
+
+
+def _normalized_reference_date(series: pd.Series) -> pd.Series:
+    return pd.to_datetime(series, errors="coerce").dt.strftime("%Y-%m-%d")
+
+
+def _normalized_version(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce").astype("Int64")
 
 
 def normalize_statement(
