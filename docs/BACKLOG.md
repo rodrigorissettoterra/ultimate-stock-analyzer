@@ -20,4 +20,17 @@
 - **M17 API** — stable read/query endpoints and persistence boundary. **DONE.**
 - **M18 Dashboard** — ranking, company details and validation views. **DONE.**
 - **M19 Conversational Agent** — evidence-backed retrieval and optional LLM synthesis. **DONE.**
-- **M20 Production** — operational foundation, persistence, observability and runbooks. **DONE candidate.**
+- **M20 Production** — operational foundation, persistence, observability, container gates and runbooks. **DONE.**
+
+## Post-M20 empirical/operational gates
+
+These are validation and operations tasks rather than missing architecture milestones:
+
+- populate a sufficiently complete point-in-time B3/CVM historical dataset;
+- execute full historical backtests across multiple market regimes;
+- run M16 walk-forward calibration and promote new weights only if OOS gates are met repeatedly;
+- automate/schedule production collectors with source-specific monitoring and retry policies;
+- validate real PostgreSQL backup/restore drills and operational recovery objectives;
+- measure data coverage, freshness and source divergence in sustained runs;
+- document any paid data source only if a free alternative is demonstrably inadequate;
+- perform regulatory/legal review before presenting the system publicly as an investment-analysis service rather than research software.
