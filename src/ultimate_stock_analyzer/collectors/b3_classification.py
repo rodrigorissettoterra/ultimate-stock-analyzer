@@ -57,16 +57,23 @@ class B3IndustryClassificationCollector:
         return f"{B3_COMPANY_API_BASE}/{endpoint}/{token}"
 
     def download_workbook(self) -> bytes:
-        url = self._url("GetDownloadIndustryClassification", {"language": "pt-br"})
+        payload = {"language": "pt-br"}
+        url = self._url("GetDownloadIndustryClassification", payload)
         with httpx.Client(
             timeout=self.timeout_seconds,
             follow_redirects=True,
             headers=self._headers(),
         ) as client:
+            session_response = client.get(self._url("GetIndustryClassification", payload))
+            session_response.raise_for_status()
             response = client.get(url)
             response.raise_for_status()
         if not response.content.startswith(b"PK"):
-            raise ValueError("B3 industry-classification download is not an XLSX archive")
+            content_type = response.headers.get("content-type", "unknown")
+            raise ValueError(
+                "B3 industry-classification download is not an XLSX archive: "
+                f"content_type={content_type} bytes={len(response.content)}"
+            )
         return response.content
 
     def download_company_catalog_archive(self) -> bytes:
