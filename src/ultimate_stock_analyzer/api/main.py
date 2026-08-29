@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 
 from ultimate_stock_analyzer.api.repository import AnalysisRepository, InMemoryAnalysisRepository
 from ultimate_stock_analyzer.api.schemas import (
@@ -17,6 +19,7 @@ from ultimate_stock_analyzer.api.service import AnalysisQueryService
 from ultimate_stock_analyzer.scoring.integrated import DecisionStatus
 
 API_VERSION = "1.0.0"
+WEB_DIRECTORY = Path(__file__).resolve().parents[1] / "web"
 
 
 def create_app(repository: AnalysisRepository | None = None) -> FastAPI:
@@ -91,6 +94,11 @@ def create_app(repository: AnalysisRepository | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="backtest not found")
         return result
 
+    application.mount(
+        "/dashboard",
+        StaticFiles(directory=WEB_DIRECTORY, html=True),
+        name="dashboard",
+    )
     return application
 
 

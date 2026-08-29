@@ -17,7 +17,7 @@
 - **M14 Integrated score** — company quality, investment attractiveness and entry timing. **DONE.**
 - **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison. **DONE.**
 - **M16 Walk-forward** — calibration framework with strict OOS promotion gates. **DONE.**
-- **M17 API** — stable read/query endpoints and persistence boundary. **DONE candidate.**
-- **M18 Dashboard** — ranking, company pages and comparisons.
+- **M17 API** — stable read/query endpoints and persistence boundary. **DONE.**
+- **M18 Dashboard** — ranking, company details and validation views. **DONE candidate.**
 - **M19 Conversational Agent** — evidence-backed natural-language analysis.
 - **M20 Production** — scheduling, observability, backups and runbooks.
