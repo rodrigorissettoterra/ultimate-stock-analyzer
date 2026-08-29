@@ -33,16 +33,22 @@ class CVMCollector:
             response.raise_for_status()
             return response.content
 
-    def download_registry(self) -> pd.DataFrame:
+    def download_registry_bytes(self) -> bytes:
         with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
             response = client.get(self.registry_url(), headers={"User-Agent": self.user_agent})
             response.raise_for_status()
+        return response.content
+
+    def read_registry_bytes(self, content: bytes) -> pd.DataFrame:
         return pd.read_csv(
-            BytesIO(response.content),
+            BytesIO(content),
             sep=";",
             encoding="latin1",
             low_memory=False,
         )
+
+    def download_registry(self) -> pd.DataFrame:
+        return self.read_registry_bytes(self.download_registry_bytes())
 
     def list_csv_files(self, archive: bytes) -> list[str]:
         with ZipFile(BytesIO(archive)) as zf:

@@ -28,7 +28,20 @@ class CVMIngestionService:
         collected_at: datetime,
         active_only: bool = True,
     ) -> list[IssuerRecord]:
-        frame = self.collector.download_registry()
+        return self.load_issuer_master_from_bytes(
+            self.collector.download_registry_bytes(),
+            collected_at=collected_at,
+            active_only=active_only,
+        )
+
+    def load_issuer_master_from_bytes(
+        self,
+        content: bytes,
+        *,
+        collected_at: datetime,
+        active_only: bool = True,
+    ) -> list[IssuerRecord]:
+        frame = self.collector.read_registry_bytes(content)
         return normalize_issuer_registry(
             frame,
             collected_at=collected_at,
@@ -42,6 +55,17 @@ class CVMIngestionService:
         collected_at: datetime,
     ) -> list[SecurityRecord]:
         archive = self.collector.download_zip("FCA", year)
+        return self.load_security_master_from_archive(
+            archive,
+            collected_at=collected_at,
+        )
+
+    def load_security_master_from_archive(
+        self,
+        archive: bytes,
+        *,
+        collected_at: datetime,
+    ) -> list[SecurityRecord]:
         security_file = self.collector.find_csv(archive, "valor_mobiliario")
         securities = self.collector.read_csv(archive, security_file)
         metadata = self._read_metadata(archive, "fca_cia_aberta")
@@ -61,23 +85,62 @@ class CVMIngestionService:
         scope_token: str,
         collected_at: datetime,
     ) -> list[FinancialStatementLine]:
-        document = document_type.upper()
-        archive = self.collector.download_zip(document, year)
-        statement_file = self.collector.find_csv(
-            archive,
-            statement.lower(),
-            scope_token.lower(),
-        )
-        statement_frame = self.collector.read_csv(archive, statement_file)
-        metadata = self._read_metadata(archive, f"{document.lower()}_cia_aberta")
-        statement_frame = attach_document_metadata(statement_frame, metadata)
-        return normalize_statement(
-            statement_frame,
-            document_type=document,
-            statement=statement,
+        return self.load_statements(
+            document_type=document_type,
+            year=year,
+            statements=(statement,),
+            scope_token=scope_token,
             collected_at=collected_at,
-            source_document=statement_file,
         )
+
+    def load_statements(
+        self,
+        *,
+        document_type: str,
+        year: int,
+        statements: tuple[str, ...],
+        scope_token: str,
+        collected_at: datetime,
+    ) -> list[FinancialStatementLine]:
+        archive = self.collector.download_zip(document_type.upper(), year)
+        return self.load_statements_from_archive(
+            archive,
+            document_type=document_type,
+            statements=statements,
+            scope_token=scope_token,
+            collected_at=collected_at,
+        )
+
+    def load_statements_from_archive(
+        self,
+        archive: bytes,
+        *,
+        document_type: str,
+        statements: tuple[str, ...],
+        scope_token: str,
+        collected_at: datetime,
+    ) -> list[FinancialStatementLine]:
+        document = document_type.upper()
+        metadata = self._read_metadata(archive, f"{document.lower()}_cia_aberta")
+        output: list[FinancialStatementLine] = []
+        for statement in statements:
+            statement_file = self.collector.find_csv(
+                archive,
+                statement.lower(),
+                scope_token.lower(),
+            )
+            statement_frame = self.collector.read_csv(archive, statement_file)
+            statement_frame = attach_document_metadata(statement_frame, metadata)
+            output.extend(
+                normalize_statement(
+                    statement_frame,
+                    document_type=document,
+                    statement=statement,
+                    collected_at=collected_at,
+                    source_document=statement_file,
+                )
+            )
+        return output
 
     def _read_metadata(self, archive: bytes, prefix: str) -> pd.DataFrame:
         candidates = [

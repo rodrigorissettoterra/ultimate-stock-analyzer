@@ -94,18 +94,19 @@ def parse_cotahist_text(
     text: str,
     *,
     ticker: str | None = None,
+    tickers: Iterable[str] | None = None,
     spot_only: bool = True,
 ) -> list[PriceBar]:
-    requested = ticker.upper().strip() if ticker else None
+    requested = _ticker_filter(ticker=ticker, tickers=tickers)
     bars: list[PriceBar] = []
     for line in text.splitlines():
         bar = parse_cotahist_line(line, spot_only=spot_only)
         if bar is None:
             continue
-        if requested is not None and bar.ticker.upper() != requested:
+        if requested is not None and bar.ticker.upper() not in requested:
             continue
         bars.append(bar)
-    return sorted(bars, key=lambda item: item.trade_date)
+    return sorted(bars, key=lambda item: (item.trade_date, item.ticker))
 
 
 def apply_adjusted_closes(
@@ -125,7 +126,7 @@ class B3CotahistCollector:
     timeout_seconds: float = 60.0
     user_agent: str = "ultimate-stock-analyzer/0.9"
 
-    def fetch_year(self, year: int, *, ticker: str | None = None) -> list[PriceBar]:
+    def download_year_archive(self, year: int) -> bytes:
         current_year = datetime.now(UTC).year
         if year < 1986 or year > current_year:
             raise ValueError("year is outside the public B3 historical-series range")
@@ -133,10 +134,52 @@ class B3CotahistCollector:
         with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
             response = client.get(url, headers={"User-Agent": self.user_agent})
             response.raise_for_status()
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        return response.content
+
+    def parse_year_archive(
+        self,
+        content: bytes,
+        *,
+        ticker: str | None = None,
+        tickers: Iterable[str] | None = None,
+    ) -> list[PriceBar]:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
             members = [name for name in archive.namelist() if name.upper().endswith(".TXT")]
             if not members:
                 raise ValueError("B3 COTAHIST archive contains no TXT file")
             with archive.open(members[0]) as file:
                 text = file.read().decode("latin1")
-        return parse_cotahist_text(text, ticker=ticker)
+        return parse_cotahist_text(text, ticker=ticker, tickers=tickers)
+
+    def fetch_year(
+        self,
+        year: int,
+        *,
+        ticker: str | None = None,
+        tickers: Iterable[str] | None = None,
+    ) -> list[PriceBar]:
+        return self.parse_year_archive(
+            self.download_year_archive(year),
+            ticker=ticker,
+            tickers=tickers,
+        )
+
+
+def _ticker_filter(
+    *,
+    ticker: str | None,
+    tickers: Iterable[str] | None,
+) -> set[str] | None:
+    if ticker is not None and tickers is not None:
+        raise ValueError("provide ticker or tickers, not both")
+    if ticker is not None:
+        normalized = ticker.strip().upper()
+        if not normalized:
+            raise ValueError("ticker must not be blank")
+        return {normalized}
+    if tickers is None:
+        return None
+    normalized = {item.strip().upper() for item in tickers if item.strip()}
+    if not normalized:
+        raise ValueError("tickers must contain at least one non-blank ticker")
+    return normalized
