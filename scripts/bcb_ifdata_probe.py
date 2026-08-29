@@ -12,6 +12,8 @@ ANO_MES = 202512
 def _get(client: httpx.Client, path: str, params: dict[str, object]) -> dict[str, Any]:
     response = client.get(f"{BASE}/{path}", params=params)
     print(json.dumps({"url": str(response.url), "status": response.status_code}))
+    if response.status_code >= 400:
+        print(json.dumps({"error_body": response.text[:1000]}, ensure_ascii=False))
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):
@@ -67,9 +69,16 @@ def main() -> None:
         prudent_candidates = [
             row
             for row in itau
-            if row.get("CodConglomeradoPrudencial")
+            if row.get("Situacao") == "A"
+            and row.get("CodConglomeradoPrudencial")
+            and row.get("CodInst") == row.get("CodConglomeradoPrudencial")
         ]
-        chosen = prudent_candidates[0] if prudent_candidates else itau[0]
+        if len(prudent_candidates) != 1:
+            raise RuntimeError(
+                "expected exactly one ITAU prudential-conglomerate row, "
+                f"found {len(prudent_candidates)}"
+            )
+        chosen = prudent_candidates[0]
         cod_inst = str(chosen["CodInst"])
         print(json.dumps({"chosen_cod_inst": cod_inst, "chosen": chosen}, ensure_ascii=False))
 
