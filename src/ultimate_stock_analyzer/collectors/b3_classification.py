@@ -94,7 +94,7 @@ class B3IndustryClassificationCollector:
                 page = body.get("page") or {}
                 results = body.get("results")
                 if not isinstance(results, list):
-                    raise ValueError("B3 company catalog response has no results list")
+                    raise TypeError("B3 company catalog response has no results list")
 
                 total_pages = _positive_int(page.get("totalPages"), "totalPages")
                 total_records = _nonnegative_int(page.get("totalRecords"), "totalRecords")
@@ -142,7 +142,7 @@ class B3IndustryClassificationCollector:
                 page = body.get("page") or {}
                 results = body.get("results")
                 if not isinstance(results, list):
-                    raise ValueError(f"B3 company catalog page has no results list: {name}")
+                    raise TypeError(f"B3 company catalog page has no results list: {name}")
                 total_records = _nonnegative_int(page.get("totalRecords"), "totalRecords")
                 if expected_total_records is None:
                     expected_total_records = total_records
@@ -317,7 +317,7 @@ def _is_header_row(values: list[str | None]) -> bool:
         "segmento de negociacao",
     }
     return bool(normalized & header_tokens) and any(
-        token in normalized for token in {"codigo", "emissor", "nome de pregao"}
+        token in normalized for token in ("codigo", "emissor", "nome de pregao")
     )
 
 
