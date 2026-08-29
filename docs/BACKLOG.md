@@ -1,23 +1,23 @@
-# Backlog M0–M20
+# Backlog
 
-- **M0 Foundation** — architecture, security, licensing, specs, data dictionary. **DONE v0.1.**
-- **M1 Universe/CVM** — canonical issuers and securities from official CVM/B3-compatible data. **DONE v0.2.**
-- **M2 Normalization** — point-in-time financial statements with revision lineage. **DONE v0.2.**
-- **M3 Metrics engine** — deterministic fundamental metrics and CVM account contracts. **DONE v0.3.**
-- **M4 Dividend engine** — official-first events, regularity, TTM and sustainability. **DONE v0.4.**
-- **M5 Structural score** — sector-relative quality ranking, coverage and confidence. **DONE v0.5.**
-- **M6 Sector models** — banks, insurers, utilities, commodities and general corporates. **DONE v0.6.**
-- **M7 Valuation** — relative valuation and multi-model fair-value framework. **DONE v0.7.**
-- **M8 Market/entry** — price history, momentum, valuation context, speculation risk. **DONE v0.8.**
-- **M9 Risk/liquidity** — downside risk, spreads/turnover/free float. **DONE v0.9.**
-- **M10 Accounting/governance** — quality, audit, governance and insider evidence. **DONE v1.0.**
-- **M11 Securities lending** — B3 loan rates, utilization and short pressure. **DONE v1.1.**
-- **M12 News/events + LLM** — dedupe, clustering, materiality and impact. **DONE v1.2.**
-- **M13 Macro** — BCB/IBGE and sector sensitivity/scenarios. **DONE v1.3.**
-- **M14 Integrated score** — separate company quality, investment attractiveness and entry timing. **DONE v1.4 candidate.**
-- **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison.
+- **M0 Foundation** — architecture, security, licensing and project contracts. **DONE.**
+- **M1 Universe/CVM** — canonical issuers/securities and official registration data. **DONE.**
+- **M2 Normalization** — point-in-time financial statements and revisions. **DONE.**
+- **M3 Fundamental metrics** — deterministic accounting/financial metrics. **DONE.**
+- **M4 Dividend Engine** — regularity, sustainability and official-event semantics. **DONE.**
+- **M5 Structural Score** — sector-peer company quality. **DONE.**
+- **M6 Sector models** — banks, insurers, utilities, commodities and corporates. **DONE.**
+- **M7 Valuation** — multi-model fair-value ranges and margin of safety. **DONE.**
+- **M8 Market/entry** — market context and speculation risk. **DONE.**
+- **M9 Risk/liquidity** — downside risk and execution capacity. **DONE.**
+- **M10 Accounting/governance** — quality, audit, governance and insider evidence. **DONE.**
+- **M11 Securities lending** — B3 loan rates, utilization and short pressure. **DONE.**
+- **M12 News/events + LLM** — dedupe, clustering, materiality and impact. **DONE.**
+- **M13 Macro** — BCB/IBGE and sector sensitivity/scenarios. **DONE.**
+- **M14 Integrated score** — company quality, investment attractiveness and entry timing. **DONE.**
+- **M15 Backtesting** — point-in-time, corporate actions and benchmark comparison. **DONE candidate.**
 - **M16 Walk-forward** — weight calibration without look-ahead/overfit.
 - **M17 API** — stable read/query endpoints.
-- **M18 Dashboard** — ranking, company detail and comparison.
-- **M19 Conversational agent** — evidence-grounded explanations and queries.
-- **M20 Production** — scheduling, observability, release hardening.
+- **M18 Dashboard** — ranking, company pages and comparisons.
+- **M19 Conversational Agent** — evidence-backed natural-language analysis.
+- **M20 Production** — scheduling, observability, backups and runbooks.
