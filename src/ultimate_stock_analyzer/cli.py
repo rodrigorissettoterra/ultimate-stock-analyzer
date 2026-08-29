@@ -4,6 +4,8 @@ import argparse
 from datetime import UTC, datetime
 
 from ultimate_stock_analyzer.bootstrap import (
+    BootstrapDataset,
+    FundamentalCoverageProfiler,
     PublicDataBootstrapPlan,
     PublicDataBootstrapService,
 )
@@ -48,6 +50,13 @@ def main() -> None:
     )
     bootstrap.add_argument("--data-dir", default="./data")
 
+    coverage = sub.add_parser(
+        "profile-coverage",
+        help="Profile accounting and publication-timestamp coverage of one bootstrap run",
+    )
+    coverage.add_argument("--run-dir", required=True)
+    coverage.add_argument("--data-dir", default="./data")
+
     args = parser.parse_args()
     if args.command == "screen-dividends":
         rows = screen_regular_dividend_payers(
@@ -77,6 +86,21 @@ def main() -> None:
             f"securities={manifest.counts.get('securities', 0)} "
             f"statement_lines={manifest.counts.get('financial_statement_lines', 0)} "
             f"price_bars={manifest.counts.get('price_bars', 0)}"
+        )
+        return
+
+    if args.command == "profile-coverage":
+        dataset = BootstrapDataset(args.run_dir)
+        summary = FundamentalCoverageProfiler(dataset).write(
+            args.data_dir,
+            generated_at=datetime.now(UTC),
+        )
+        print(
+            f"coverage run_id={summary.bootstrap_run_id} companies={summary.companies} "
+            f"company_years={summary.company_years} "
+            f"critical_complete={summary.critical_complete_company_years} "
+            f"pit_complete={summary.point_in_time_critical_complete_company_years} "
+            f"longitudinal_ready={summary.longitudinal_pair_ready_company_years}"
         )
 
 
