@@ -1,0 +1,84 @@
+name: real-data-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/real-data-smoke.yml"
+      - "scripts/real_data_smoke.py"
+      - "src/ultimate_stock_analyzer/bootstrap/**"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/market/prices.py"
+      - "src/ultimate_stock_analyzer/normalization/cvm.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Resolve completed year
+        id: year
+        shell: bash
+        run: |
+          echo "value=$(python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).year - 1)')" >> "$GITHUB_OUTPUT"
+      - name: Network preflight
+        shell: bash
+        run: |
+          echo "== DNS dados.cvm.gov.br =="
+          getent ahosts dados.cvm.gov.br || true
+          python - <<'PY'
+          import socket
+          for host in ("dados.cvm.gov.br", "bvmf.bmfbovespa.com.br"):
+              print(f"== getaddrinfo {host} ==")
+              try:
+                  for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM):
+                      print(item)
+              except Exception as exc:
+                  print(type(exc).__name__, exc)
+          PY
+          echo "== CVM IPv4 =="
+          curl -4 -I -L --connect-timeout 10 --max-time 20 \
+            https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv || true
+          echo "== CVM IPv6 =="
+          curl -6 -I -L --connect-timeout 10 --max-time 20 \
+            https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv || true
+          echo "== B3 IPv4 =="
+          curl -4 -I -L --connect-timeout 10 --max-time 20 \
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A${{ steps.year.outputs.value }}.ZIP" || true
+      - name: Run official-source smoke test
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/real_data_smoke.py \
+            --year "${{ steps.year.outputs.value }}" \
+            --ticker PETR4 \
+            --ticker VALE3 \
+            --ticker ITUB4 \
+            --data-dir "${{ runner.temp }}/ultimate-stock-analyzer-data" \
+            --output-dir "./smoke-artifacts"
+      - name: Publish diagnostic summary
+        if: always()
+        run: |
+          if [ -f smoke-artifacts/smoke_summary.json ]; then
+            cat smoke-artifacts/smoke_summary.json
+          fi
+      - name: Upload manifests and summaries only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-data-smoke-${{ github.run_id }}
+          path: smoke-artifacts/
+          if-no-files-found: error
+          retention-days: 7
