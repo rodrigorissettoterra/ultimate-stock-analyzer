@@ -4,6 +4,7 @@ import argparse
 import gzip
 import json
 import shutil
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from ultimate_stock_analyzer.bootstrap import (
     PublicDataBootstrapPlan,
     PublicDataBootstrapService,
 )
+from ultimate_stock_analyzer.collectors.bcb_ifdata import resolve_prudential_identity
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 EXPECTED_SMOKE_MODELS = {
@@ -54,6 +56,80 @@ def _copy_if_exists(source: Path, destination: Path) -> None:
     if source.is_file():
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
+
+
+def _normalized_search_text(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(character for character in text if not unicodedata.combining(character)).lower()
+
+
+def _prior_ifdata_summary_candidates(
+    dataset: BootstrapDataset,
+    *,
+    company_id: str,
+    year: int,
+) -> dict[str, Any]:
+    issuer = next(
+        (row for row in dataset.issuers() if row.company_id == company_id),
+        None,
+    )
+    if issuer is None or not issuer.cnpj:
+        return {"error": "issuer/CNPJ unavailable for historical IFData diagnostics"}
+
+    prior_ano_mes = (year - 1) * 100 + 12
+    raw_dir = dataset.run_dir / "raw" / "bcb" / "ifdata" / str(year)
+    cadastro_path = raw_dir / f"{prior_ano_mes}_cadastro.json"
+    summary_path = raw_dir / f"{prior_ano_mes}_report_1.json"
+    if not cadastro_path.is_file() or not summary_path.is_file():
+        return {"error": "historical IFData raw payloads unavailable"}
+
+    identity = resolve_prudential_identity(
+        cadastro_path.read_bytes(),
+        cnpj=issuer.cnpj,
+        ano_mes=prior_ano_mes,
+    )
+    if identity is None:
+        return {"error": "historical IFData prudential identity unavailable"}
+
+    payload = json.loads(summary_path.read_bytes())
+    rows = payload.get("value") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return {"error": "historical IFData report 1 has invalid value payload"}
+
+    terms = ("ativo", "patrimonio", "carteira", "credito")
+    candidates: list[dict[str, Any]] = []
+    institution_row_count = 0
+    for raw_row in rows:
+        if not isinstance(raw_row, dict):
+            continue
+        if str(raw_row.get("CodInst") or "").strip() != identity.cod_inst:
+            continue
+        institution_row_count += 1
+        searchable = " ".join(
+            _normalized_search_text(raw_row.get(field))
+            for field in ("Grupo", "NomeColuna", "DescricaoColuna")
+        )
+        if not any(term in searchable for term in terms):
+            continue
+        candidates.append(
+            {
+                field: raw_row.get(field)
+                for field in (
+                    "Conta",
+                    "Grupo",
+                    "NomeColuna",
+                    "DescricaoColuna",
+                    "Saldo",
+                )
+            }
+        )
+
+    return {
+        "ano_mes": prior_ano_mes,
+        "cod_inst": identity.cod_inst,
+        "institution_row_count": institution_row_count,
+        "candidates": candidates,
+    }
 
 
 def _sector_routes(
@@ -171,6 +247,11 @@ def _itub_bank_profile(
             "prior_gross_credit_portfolio": profile.prior_gross_credit_portfolio,
             "annual_net_income": profile.annual_net_income,
             "annual_credit_loss_result": profile.annual_credit_loss_result,
+            "prior_summary_discovery": _prior_ifdata_summary_candidates(
+                dataset,
+                company_id=company_id,
+                year=year,
+            ),
         }
         raise RuntimeError(
             "ITUB4 IFData profile is missing verified bank metrics: "
