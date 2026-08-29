@@ -1,6 +1,6 @@
 # Post-M20 — BCB IFData Bank Accounting Contract
 
-Status: **implementation candidate in PR #24**.
+Status: **implemented in the Post-M20 bank evidence gate**.
 
 ## Objective
 
@@ -82,7 +82,7 @@ The denominator helper fails to `UNKNOWN` when a required balance is missing or 
 
 ## Metrics deliberately left UNKNOWN
 
-This PR does **not** manufacture the following `bank_v1` inputs:
+This implementation does **not** manufacture the following `bank_v1` inputs:
 
 - `net_interest_margin`
 - `npl_90d_ratio`
