@@ -19,5 +19,5 @@
 - **M16 Walk-forward** — calibration framework with strict OOS promotion gates. **DONE.**
 - **M17 API** — stable read/query endpoints and persistence boundary. **DONE.**
 - **M18 Dashboard** — ranking, company details and validation views. **DONE.**
-- **M19 Conversational Agent** — evidence-backed retrieval and optional LLM synthesis. **DONE candidate.**
-- **M20 Production** — scheduling, observability, backups and runbooks.
+- **M19 Conversational Agent** — evidence-backed retrieval and optional LLM synthesis. **DONE.**
+- **M20 Production** — operational foundation, persistence, observability and runbooks. **DONE candidate.**

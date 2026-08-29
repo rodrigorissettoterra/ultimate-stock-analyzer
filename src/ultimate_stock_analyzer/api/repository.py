@@ -7,6 +7,8 @@ from ultimate_stock_analyzer.api.schemas import BacktestSummary, StockAnalysis
 
 
 class AnalysisRepository(Protocol):
+    def is_ready(self) -> bool: ...
+
     def list_stock_analyses(self) -> list[StockAnalysis]: ...
 
     def get_stock_analysis(self, ticker: str) -> StockAnalysis | None: ...
@@ -17,10 +19,7 @@ class AnalysisRepository(Protocol):
 
 
 class InMemoryAnalysisRepository:
-    """Reference repository for tests, notebooks and local/Colab use.
-
-    Production persistence can implement the same protocol without changing HTTP contracts.
-    """
+    """Reference repository for tests, notebooks and local/Colab use."""
 
     def __init__(
         self,
@@ -29,6 +28,9 @@ class InMemoryAnalysisRepository:
     ) -> None:
         self._analyses = {analysis.ticker.upper(): analysis for analysis in analyses}
         self._backtests = {backtest.backtest_id: backtest for backtest in backtests}
+
+    def is_ready(self) -> bool:
+        return True
 
     def list_stock_analyses(self) -> list[StockAnalysis]:
         return list(self._analyses.values())

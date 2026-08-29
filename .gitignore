@@ -20,6 +20,12 @@ credentials/
 *.db
 *.sqlite
 
+# Operational backups / runtime state
+/backups/
+/runtime/
+*.dump
+*.backup
+
 # Python
 __pycache__/
 *.py[cod]
