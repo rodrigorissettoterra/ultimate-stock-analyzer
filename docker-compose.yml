@@ -1,23 +1,57 @@
 services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: usa
-      POSTGRES_USER: usa
-      POSTGRES_PASSWORD: usa
+      POSTGRES_DB: ${POSTGRES_DB:-usa}
+      POSTGRES_USER: ${POSTGRES_USER:-usa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./ops/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      USA_ENV: production
+      USA_DATABASE_URL: ${USA_DATABASE_URL:?set USA_DATABASE_URL in .env}
     ports:
-      - "5432:5432"
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  maintenance:
+    build: .
+    command: ["python", "-m", "ultimate_stock_analyzer.runtime.worker"]
+    env_file:
+      - .env
+    environment:
+      USA_ENV: production
+      USA_DATABASE_URL: ${USA_DATABASE_URL:?set USA_DATABASE_URL in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   postgres_data:

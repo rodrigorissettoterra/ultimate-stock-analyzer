@@ -18,6 +18,7 @@ dependencies = [
   "PyYAML>=6.0",
   "pandas>=2.2",
   "numpy>=2.0",
+  "uvicorn>=0.30",
 ]
 
 [project.scripts]
@@ -26,6 +27,7 @@ ultimate-stock-analyzer = "ultimate_stock_analyzer.cli:main"
 [project.optional-dependencies]
 analytics = ["polars>=1.5", "duckdb>=1.1", "pyarrow>=17"]
 fundamentus = ["fundamentus>=0.2", "lxml>=5.3"]
+production = ["psycopg[binary]>=3.2"]
 dev = ["pytest>=8.3", "ruff>=0.6", "mypy>=1.11", "lxml>=5.3"]
 
 [tool.pytest.ini_options]
