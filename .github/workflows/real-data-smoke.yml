@@ -33,6 +33,30 @@ jobs:
         shell: bash
         run: |
           echo "value=$(python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).year - 1)')" >> "$GITHUB_OUTPUT"
+      - name: Network preflight
+        shell: bash
+        run: |
+          echo "== DNS dados.cvm.gov.br =="
+          getent ahosts dados.cvm.gov.br || true
+          python - <<'PY'
+          import socket
+          for host in ("dados.cvm.gov.br", "bvmf.bmfbovespa.com.br"):
+              print(f"== getaddrinfo {host} ==")
+              try:
+                  for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM):
+                      print(item)
+              except Exception as exc:
+                  print(type(exc).__name__, exc)
+          PY
+          echo "== CVM IPv4 =="
+          curl -4 -I -L --connect-timeout 10 --max-time 20 \
+            https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv || true
+          echo "== CVM IPv6 =="
+          curl -6 -I -L --connect-timeout 10 --max-time 20 \
+            https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv || true
+          echo "== B3 IPv4 =="
+          curl -4 -I -L --connect-timeout 10 --max-time 20 \
+            https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A2025.ZIP || true
       - name: Run official-source smoke test
         env:
           PYTHONUNBUFFERED: "1"
