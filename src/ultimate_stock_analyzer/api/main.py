@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 
+from ultimate_stock_analyzer.agent.models import AgentAnswer
+from ultimate_stock_analyzer.agent.service import ConversationalAgentService
+from ultimate_stock_analyzer.agent.synthesizer import (
+    AgentSynthesizer,
+    DeterministicAgentSynthesizer,
+    OpenAICompatibleAgentSynthesizer,
+)
 from ultimate_stock_analyzer.api.repository import AnalysisRepository, InMemoryAnalysisRepository
 from ultimate_stock_analyzer.api.schemas import (
+    AgentQueryRequest,
     ApiMetadata,
     BacktestSummary,
     HealthResponse,
@@ -22,8 +31,29 @@ API_VERSION = "1.0.0"
 WEB_DIRECTORY = Path(__file__).resolve().parents[1] / "web"
 
 
-def create_app(repository: AnalysisRepository | None = None) -> FastAPI:
+def _environment_synthesizer() -> AgentSynthesizer:
+    api_key = os.getenv("USA_LLM_API_KEY", "").strip()
+    model = os.getenv("USA_LLM_MODEL", "").strip()
+    if not api_key or not model:
+        return DeterministicAgentSynthesizer()
+    timeout = float(os.getenv("USA_LLM_TIMEOUT_SECONDS", "30"))
+    return OpenAICompatibleAgentSynthesizer(
+        api_key=api_key,
+        model=model,
+        base_url=os.getenv("USA_LLM_BASE_URL", "https://api.openai.com/v1"),
+        timeout_seconds=timeout,
+    )
+
+
+def create_app(
+    repository: AnalysisRepository | None = None,
+    agent_synthesizer: AgentSynthesizer | None = None,
+) -> FastAPI:
     query_service = AnalysisQueryService(repository or InMemoryAnalysisRepository())
+    agent_service = ConversationalAgentService(
+        query_service,
+        agent_synthesizer or _environment_synthesizer(),
+    )
     application = FastAPI(
         title="Ultimate Stock Analyzer API",
         version=API_VERSION,
@@ -93,6 +123,10 @@ def create_app(repository: AnalysisRepository | None = None) -> FastAPI:
         if result is None:
             raise HTTPException(status_code=404, detail="backtest not found")
         return result
+
+    @application.post("/v1/agent/query", response_model=AgentAnswer, tags=["agent"])
+    def agent_query(request: AgentQueryRequest) -> AgentAnswer:
+        return agent_service.answer(request.question)
 
     application.mount(
         "/dashboard",

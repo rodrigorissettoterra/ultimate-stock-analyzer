@@ -95,6 +95,10 @@ class BacktestSummary(StrictModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentQueryRequest(StrictModel):
+    question: str = Field(min_length=2, max_length=2000)
+
+
 class HealthResponse(StrictModel):
     status: str
     api_version: str
