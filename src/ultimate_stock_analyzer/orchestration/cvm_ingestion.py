@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import datetime
 from typing import Any
 
@@ -23,6 +24,7 @@ class CVMIngestionService:
     def __init__(self, collector: CVMCollector | None = None) -> None:
         self.collector = collector or CVMCollector()
         self._cvm_code_by_cnpj: dict[str, int] = {}
+        self.last_unmapped_security_tickers: tuple[str, ...] = ()
 
     def load_issuer_master(
         self,
@@ -184,15 +186,20 @@ class CVMIngestionService:
                 missing_code, cnpj_column
             ].map(lambda value: self._cvm_code_by_cnpj.get(_cnpj_key(value) or ""))
 
+        self.last_unmapped_security_tickers = ()
         if ticker_column is not None:
             ticker_text = output[ticker_column].fillna("").astype(str).str.strip()
             unresolved = ticker_text.ne("") & output["CD_CVM"].isna()
             if unresolved.any():
-                examples = sorted(set(ticker_text[unresolved].tolist()))[:5]
-                raise ValueError(
-                    "FCA ticker rows could not be mapped to official CVM issuer identity: "
-                    f"count={int(unresolved.sum())} examples={', '.join(examples)}"
+                unmapped = tuple(sorted(set(ticker_text[unresolved].tolist())))
+                self.last_unmapped_security_tickers = unmapped
+                warnings.warn(
+                    "Excluding FCA ticker rows without an official CVM issuer identity: "
+                    f"count={int(unresolved.sum())} examples={', '.join(unmapped[:5])}",
+                    RuntimeWarning,
+                    stacklevel=2,
                 )
+                output = output.loc[~unresolved].copy()
         return output
 
     def _read_metadata(self, archive: bytes, prefix: str) -> pd.DataFrame:
