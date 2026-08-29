@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest

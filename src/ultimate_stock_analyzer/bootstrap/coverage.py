@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import gzip
-import hashlib
-import json
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -12,7 +10,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
-from ultimate_stock_analyzer.domain.master import FinancialStatementLine, IssuerRecord, SecurityRecord
+from ultimate_stock_analyzer.domain.master import (
+    FinancialStatementLine,
+    IssuerRecord,
+    SecurityRecord,
+)
 from ultimate_stock_analyzer.fundamentals.contracts import (
     GENERAL_CORPORATE_CONTRACT,
     evaluate_contract,
