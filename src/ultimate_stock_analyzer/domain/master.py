@@ -87,8 +87,18 @@ class BankPrudentialAnnualRecord(BaseModel):
     prior_equity: float | None = None
     gross_credit_portfolio: float | None = None
     prior_gross_credit_portfolio: float | None = None
+
     annual_net_income: float | None = None
     annual_credit_loss_result: float | None = None
+    annual_intermediation_income: float | None = None
+    annual_intermediation_result: float | None = None
+    annual_intermediation_expected_loss_result: float | None = None
+    annual_payment_transactions_result: float | None = None
+    annual_payment_expected_loss_result: float | None = None
+    annual_bank_tariff_income: float | None = None
+    annual_other_service_income: float | None = None
+    annual_personnel_expense: float | None = None
+    annual_administrative_expense: float | None = None
 
     basel_ratio: float | None = None
     tier1_ratio: float | None = None
@@ -99,6 +109,8 @@ class BankPrudentialAnnualRecord(BaseModel):
     roa: float | None = None
     cost_of_credit: float | None = None
     equity_to_assets: float | None = None
+    efficiency_ratio: float | None = None
+    fee_income_share: float | None = None
 
     available_from_estimate: datetime | None = None
     collected_at: datetime
