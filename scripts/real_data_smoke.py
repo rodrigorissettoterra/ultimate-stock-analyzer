@@ -56,6 +56,52 @@ def _copy_if_exists(source: Path, destination: Path) -> None:
         shutil.copyfile(source, destination)
 
 
+def _ifdata_report_rows(
+    dataset: BootstrapDataset,
+    *,
+    year: int,
+    report_number: int,
+    cod_inst: str,
+) -> list[dict[str, Any]]:
+    report_path = (
+        dataset.run_dir
+        / "raw"
+        / "bcb"
+        / "ifdata"
+        / str(year)
+        / f"{year}12_report_{report_number}.json"
+    )
+    if not report_path.is_file():
+        raise RuntimeError(f"IFData raw report unavailable: {report_path.name}")
+
+    payload = json.loads(report_path.read_bytes())
+    rows = payload.get("value") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        raise RuntimeError(
+            f"IFData report {report_number} must contain a value list"
+        )
+
+    selected: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("CodInst") or "").strip() != cod_inst:
+            continue
+        selected.append(
+            {
+                field: row.get(field)
+                for field in (
+                    "Conta",
+                    "Grupo",
+                    "NomeColuna",
+                    "DescricaoColuna",
+                    "Saldo",
+                )
+            }
+        )
+    return sorted(selected, key=lambda row: str(row.get("Conta") or ""))
+
+
 def _sector_routes(
     dataset: BootstrapDataset,
     requested: set[str],
@@ -187,6 +233,12 @@ def _itub_bank_profile(
         "institution_type": profile.institution_type,
         "available_from_estimate": profile.available_from_estimate,
         "point_in_time_eligible": profile.point_in_time_eligible,
+        "report_4_discovery_rows": _ifdata_report_rows(
+            dataset,
+            year=year,
+            report_number=4,
+            cod_inst=profile.ifdata_cod_inst,
+        ),
         **required_metrics,
     }
 
