@@ -125,9 +125,9 @@ def test_build_annual_profile_uses_two_semesters_and_verified_bank_metrics() -> 
         prior_summary=_report(
             "C0080099",
             {
-                "140220": 2_000.0,
-                "140246": 200.0,
-                "141873": 900.0,
+                "78182": 2_000.0,
+                "78186": 200.0,
+                "78183": 900.0,
             },
         ),
         first_half_income=_report(
@@ -164,6 +164,9 @@ def test_build_annual_profile_uses_two_semesters_and_verified_bank_metrics() -> 
         collected_at=datetime(2026, 8, 29, tzinfo=UTC),
     )
 
+    assert profile.prior_total_assets == pytest.approx(2_000.0)
+    assert profile.prior_equity == pytest.approx(200.0)
+    assert profile.prior_gross_credit_portfolio == pytest.approx(900.0)
     assert profile.annual_net_income == pytest.approx(44.0)
     assert profile.annual_credit_loss_result == pytest.approx(-20.0)
     assert profile.roe == pytest.approx(44.0 / 220.0)
