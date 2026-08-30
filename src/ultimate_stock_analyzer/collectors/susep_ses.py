@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
+from pathlib import PurePosixPath
+from zipfile import ZipFile
+
+import httpx
+import pandas as pd
 
 SUSEP_SES_HOME_URL = "https://www2.susep.gov.br/menuestatistica/SES/principal.aspx"
 SUSEP_SES_DOWNLOAD_URL = "https://www2.susep.gov.br/redarq.asp?arq=BaseCompleta.zip"
@@ -33,13 +39,70 @@ class SusepSesSourceContract:
     homepage_url: str = SUSEP_SES_HOME_URL
 
 
-VERIFIED_SOURCE_TABLES = (
+CANDIDATE_SOURCE_TABLES = (
     "Ses_cias.csv",
     "Ses_seguros.csv",
     "Ses_pl_margem.csv",
     "Ses_seg_prov_det.csv",
     "ses_provramos.csv",
 )
+
+
+@dataclass(slots=True)
+class SusepSesCollector:
+    """Download and inspect the official SES archive without inferring semantics."""
+
+    user_agent: str = "ultimate-stock-analyzer/0.2"
+    timeout_seconds: float = 120.0
+
+    def download_archive_bytes(self) -> bytes:
+        with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
+            response = client.get(
+                SUSEP_SES_DOWNLOAD_URL,
+                headers={"User-Agent": self.user_agent},
+            )
+            response.raise_for_status()
+        return response.content
+
+    def list_csv_files(self, archive: bytes) -> list[str]:
+        with ZipFile(BytesIO(archive)) as zf:
+            return sorted(
+                name
+                for name in zf.namelist()
+                if not name.endswith("/") and name.lower().endswith(".csv")
+            )
+
+    def find_table(self, archive: bytes, table_name: str) -> str:
+        """Resolve one exact CSV basename, case-insensitively, or fail closed."""
+
+        expected = table_name.casefold()
+        matches = [
+            name
+            for name in self.list_csv_files(archive)
+            if PurePosixPath(name).name.casefold() == expected
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"expected one exact SUSEP SES table named {table_name!r}, "
+                f"found {len(matches)}"
+            )
+        return matches[0]
+
+    def read_table(self, archive: bytes, table_name: str) -> pd.DataFrame:
+        filename = self.find_table(archive, table_name)
+        with ZipFile(BytesIO(archive)) as zf, zf.open(filename) as csv_file:
+            return pd.read_csv(
+                csv_file,
+                sep=";",
+                encoding="latin1",
+                low_memory=False,
+            )
+
+    def inspect_schema(self, archive: bytes, table_name: str) -> tuple[str, ...]:
+        """Return raw official column names without mapping them to model metrics."""
+
+        frame = self.read_table(archive, table_name)
+        return tuple(str(column) for column in frame.columns)
 
 
 def source_contract() -> SusepSesSourceContract:

@@ -57,8 +57,8 @@ consulta contém informações básicas das supervisionadas autorizadas.
 
 ## Tabelas candidatas
 
-A documentação pública do ecossistema SES confirma a existência, entre outras, das
-seguintes tabelas relevantes para o modelo:
+Os seguintes nomes foram identificados como **candidatos de origem** para inspeção da
+base completa do SES:
 
 - `Ses_cias.csv` — cadastro de companhias;
 - `Ses_seguros.csv` — prêmios e sinistros;
@@ -66,9 +66,10 @@ seguintes tabelas relevantes para o modelo:
 - `Ses_seg_prov_det.csv` — provisões detalhadas;
 - `ses_provramos.csv` — provisões por ramo.
 
-Os nomes são registrados aqui como **candidatos de origem**, não como autorização
-para inferir campos. O mapeamento de colunas será aceito somente quando confrontado
-com a documentação da tabela/FIP e uma amostra oficial real.
+Eles não são tratados pelo código como tabelas verificadas. A existência de cada
+arquivo, seu esquema e sua semântica devem ser comprovados no arquivo oficial
+`BaseCompleta.zip` e confrontados com a documentação oficial antes de qualquer campo
+ser promovido a métrica do modelo.
 
 ## Métricas previstas no modelo `insurance_v1`
 
@@ -95,19 +96,36 @@ Isso torna `PLA` e `CMR` candidatos fortes para uma futura métrica de solvênci
 só será ativada após confirmação explícita de que ela corresponde à semântica
 pretendida pelo modelo.
 
+## Ingestão segura do arquivo oficial
+
+`SusepSesCollector` fornece agora a camada mínima para trabalhar com a base oficial sem
+inferir semântica:
+
+- baixa `BaseCompleta.zip` diretamente da URL oficial;
+- lista somente CSVs realmente presentes no ZIP;
+- resolve uma tabela por **nome de arquivo exato**, com comparação apenas
+  case-insensitive;
+- falha se a tabela estiver ausente ou se houver mais de uma correspondência;
+- lê o CSV preservando os nomes brutos das colunas;
+- permite inspecionar o esquema oficial sem transformá-lo em métricas.
+
+Não há fuzzy matching de tabelas, inferência de campos nem valores calculados por LLM.
+Os dados baixados continuam fora do Git.
+
 ## Implementação
 
-Foi adicionado `InsuranceSusepAnnualRecord` ao domínio, com os campos brutos e
-métricas especializadas opcionais. Todos começam como `None`.
+`InsuranceSusepAnnualRecord` permanece com campos brutos e métricas especializadas
+opcionais. Todos os indicadores ainda não comprovados continuam `None`.
 
-O módulo `ultimate_stock_analyzer.collectors.susep_ses` registra o contrato da fonte:
+O módulo `ultimate_stock_analyzer.collectors.susep_ses` registra e aplica o contrato:
 
 - fonte oficial pública;
 - atualização semanal;
 - sem revisão histórica comprovada;
 - `point_in_time_eligible = false`;
 - registro oficial de entidade requerido para identidade;
-- fuzzy matching proibido.
+- fuzzy matching proibido;
+- nomes de tabelas mantidos explicitamente como candidatos, não como verificados.
 
-O próximo bloco deve materializar a ingestão da base oficial, verificar o esquema real
-das tabelas e promover métricas uma a uma, preservando a política fail-closed.
+O próximo bloco deve executar a inspeção contra o `BaseCompleta.zip` real, registrar o
+esquema observado e então promover métricas uma a uma somente com evidência oficial.
