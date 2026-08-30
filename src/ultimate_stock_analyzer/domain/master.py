@@ -113,6 +113,54 @@ class BankPrudentialAnnualRecord(BaseModel):
     point_in_time_eligible: bool = False
 
 
+class InsuranceSusepAnnualRecord(BaseModel):
+    """Annual insurer evidence normalized from official SUSEP public sources.
+
+    The initial contract is intentionally fail-closed. The SES public database is
+    refreshed weekly and explicitly allows historical values to be changed by data
+    reloads, so current downloads are not considered revision-aware point-in-time
+    evidence. Scoring metrics remain optional until their exact official SES/FIP
+    field mappings and formulas are independently verified.
+    """
+
+    company_id: str
+    cvm_code: int
+    cnpj: str | None = None
+    fiscal_year: int
+    reference_date: date
+    susep_company_code: str
+    susep_name: str
+    source_scope: str = "SUPERVISED_INSURER"
+
+    total_assets: float | None = None
+    equity: float | None = None
+    annual_net_income: float | None = None
+    annual_earned_premiums: float | None = None
+    annual_incurred_claims: float | None = None
+    annual_acquisition_expense: float | None = None
+    annual_administrative_expense: float | None = None
+    technical_provisions: float | None = None
+    adjusted_equity_pla: float | None = None
+    minimum_required_capital_cmr: float | None = None
+    guaranteed_assets: float | None = None
+    required_technical_provision_coverage: float | None = None
+
+    roe: float | None = None
+    roa: float | None = None
+    combined_ratio: float | None = None
+    loss_ratio: float | None = None
+    expense_ratio: float | None = None
+    solvency_ratio: float | None = None
+    capital_adequacy_ratio: float | None = None
+    technical_provisions_coverage: float | None = None
+
+    available_from_estimate: datetime | None = None
+    collected_at: datetime
+    source: str = "SUSEP_SES"
+    source_documents: tuple[str, ...] = ()
+    point_in_time_eligible: bool = False
+
+
 class FinancialStatementLine(BaseModel):
     company_id: str
     cvm_code: int
