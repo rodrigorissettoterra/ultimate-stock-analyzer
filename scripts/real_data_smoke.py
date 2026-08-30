@@ -160,6 +160,7 @@ def _itub_bank_profile(
         "tier1_ratio": profile.tier1_ratio,
         "equity_to_assets": profile.equity_to_assets,
         "efficiency_ratio": profile.efficiency_ratio,
+        "fee_income_share": profile.fee_income_share,
     }
     missing = sorted(name for name, value in required_metrics.items() if value is None)
     if missing:
@@ -175,6 +176,10 @@ def _itub_bank_profile(
             "annual_administrative_expense": profile.annual_administrative_expense,
             "annual_operating_result_ex_provisions": (
                 profile.annual_operating_result_ex_provisions
+            ),
+            "annual_service_income": profile.annual_service_income,
+            "annual_financial_intermediation_income": (
+                profile.annual_financial_intermediation_income
             ),
         }
         raise RuntimeError(
@@ -195,6 +200,10 @@ def _itub_bank_profile(
         "annual_administrative_expense": profile.annual_administrative_expense,
         "annual_operating_result_ex_provisions": (
             profile.annual_operating_result_ex_provisions
+        ),
+        "annual_service_income": profile.annual_service_income,
+        "annual_financial_intermediation_income": (
+            profile.annual_financial_intermediation_income
         ),
         **required_metrics,
     }

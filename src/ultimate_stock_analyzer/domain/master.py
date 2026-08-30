@@ -91,6 +91,8 @@ class BankPrudentialAnnualRecord(BaseModel):
     annual_credit_loss_result: float | None = None
     annual_administrative_expense: float | None = None
     annual_operating_result_ex_provisions: float | None = None
+    annual_service_income: float | None = None
+    annual_financial_intermediation_income: float | None = None
 
     basel_ratio: float | None = None
     tier1_ratio: float | None = None
@@ -102,6 +104,7 @@ class BankPrudentialAnnualRecord(BaseModel):
     cost_of_credit: float | None = None
     equity_to_assets: float | None = None
     efficiency_ratio: float | None = None
+    fee_income_share: float | None = None
 
     available_from_estimate: datetime | None = None
     collected_at: datetime

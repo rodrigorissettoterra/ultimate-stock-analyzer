@@ -58,6 +58,28 @@ _ACCOUNT_RESULT_BEFORE_TAX_PARTICIPATIONS_2025 = "141867"
 _ACCOUNT_EXPECTED_LOSS_RESULT_2025 = "141842"
 _ACCOUNT_OTHER_EXPECTED_LOSS_RESULT_2025 = "141860"
 
+# Post-2025 IFData service-income components. The BCB REB service-revenue
+# composition includes tariffs, other service income and the net result from
+# payment transactions. The corresponding exact 2025+ report-4 identifiers are
+# used here without name-based production matching.
+_SERVICE_INCOME_ACCOUNTS_2025 = (
+    "141856",  # banking tariffs (m)
+    "141857",  # other service income (n)
+    "141855",  # payment-transaction result (l)
+)
+
+# The REB 2018 competition study approximates operating revenue as service
+# revenue plus financial-intermediation revenue. In the 2025+ IFData layout,
+# financial-intermediation revenue is reconstructed from the five official
+# income blocks (a)-(e), before expected-loss and funding-expense components.
+_FINANCIAL_INTERMEDIATION_INCOME_ACCOUNTS_2025 = (
+    "141825",  # interfinancial liquidity applications (a)
+    "141830",  # securities and financial instruments (b)
+    "141835",  # credit operations (c)
+    "141836",  # finance leases (d)
+    "141837",  # other credit-like operations (e)
+)
+
 _ACCOUNT_BASEL_RATIO = "79664"
 _ACCOUNT_TIER1_RATIO = "79660"
 _ACCOUNT_CET1_RATIO = "79659"
@@ -343,9 +365,7 @@ def build_annual_bank_profile(
     total_assets = _account_value(
         current_summary_rows, current_summary_accounts["total_assets"]
     )
-    equity = _account_value(
-        current_summary_rows, current_summary_accounts["equity"]
-    )
+    equity = _account_value(current_summary_rows, current_summary_accounts["equity"])
     gross_credit = _account_value(
         current_summary_rows,
         current_summary_accounts["gross_credit_portfolio"],
@@ -371,9 +391,7 @@ def build_annual_bank_profile(
 
     first_half_net_income = _account_value(first_half_rows, _ACCOUNT_NET_INCOME)
     second_half_net_income = _account_value(second_half_rows, _ACCOUNT_NET_INCOME)
-    annual_net_income = _sum_required_pair(
-        first_half_net_income, second_half_net_income
-    )
+    annual_net_income = _sum_required_pair(first_half_net_income, second_half_net_income)
 
     first_half_credit_loss = _account_value(
         first_half_rows, _ACCOUNT_CREDIT_LOSS_RESULT
@@ -388,6 +406,10 @@ def build_annual_bank_profile(
     annual_administrative_expense: float | None = None
     annual_operating_result_ex_provisions: float | None = None
     efficiency_ratio: float | None = None
+    annual_service_income: float | None = None
+    annual_financial_intermediation_income: float | None = None
+    fee_income_share: float | None = None
+
     if (
         first_half_identity is not None
         and first_half_identity.ano_mes >= 202501
@@ -428,6 +450,31 @@ def build_annual_bank_profile(
             annual_operating_result_ex_provisions,
         )
 
+        first_half_service_income = _required_account_total(
+            first_half_rows, _SERVICE_INCOME_ACCOUNTS_2025
+        )
+        second_half_service_income = _required_account_total(
+            second_half_rows, _SERVICE_INCOME_ACCOUNTS_2025
+        )
+        annual_service_income = _sum_required_pair(
+            first_half_service_income, second_half_service_income
+        )
+
+        first_half_intermediation_income = _required_account_total(
+            first_half_rows, _FINANCIAL_INTERMEDIATION_INCOME_ACCOUNTS_2025
+        )
+        second_half_intermediation_income = _required_account_total(
+            second_half_rows, _FINANCIAL_INTERMEDIATION_INCOME_ACCOUNTS_2025
+        )
+        annual_financial_intermediation_income = _sum_required_pair(
+            first_half_intermediation_income,
+            second_half_intermediation_income,
+        )
+        fee_income_share = _service_income_share(
+            annual_service_income,
+            annual_financial_intermediation_income,
+        )
+
     average_equity = _average_positive(prior_equity, equity)
     average_assets = _average_positive(prior_total_assets, total_assets)
     average_credit = _average_positive(prior_gross_credit, gross_credit)
@@ -457,6 +504,8 @@ def build_annual_bank_profile(
         annual_credit_loss_result=annual_credit_loss_result,
         annual_administrative_expense=annual_administrative_expense,
         annual_operating_result_ex_provisions=annual_operating_result_ex_provisions,
+        annual_service_income=annual_service_income,
+        annual_financial_intermediation_income=annual_financial_intermediation_income,
         basel_ratio=basel_ratio,
         tier1_ratio=tier1_ratio,
         core_equity_tier1_ratio=cet1_ratio,
@@ -470,6 +519,7 @@ def build_annual_bank_profile(
         ),
         equity_to_assets=_ratio(equity, total_assets),
         efficiency_ratio=efficiency_ratio,
+        fee_income_share=fee_income_share,
         available_from_estimate=datetime(fiscal_year + 1, 4, 1, tzinfo=UTC),
         collected_at=_aware(collected_at),
         source_documents=(
@@ -521,9 +571,7 @@ def _rows(content: bytes) -> list[dict[str, Any]]:
 
 
 def _institution_rows(content: bytes, cod_inst: str) -> list[dict[str, Any]]:
-    return [
-        row for row in _rows(content) if _text(row.get("CodInst")) == cod_inst
-    ]
+    return [row for row in _rows(content) if _text(row.get("CodInst")) == cod_inst]
 
 
 def _account_value(rows: list[dict[str, Any]], account: str) -> float | None:
@@ -538,6 +586,16 @@ def _account_value(rows: list[dict[str, Any]], account: str) -> float | None:
     if len(numeric) > 1 and any(value != numeric[0] for value in numeric[1:]):
         raise ValueError(f"ambiguous IFData balance for account {account}")
     return numeric[0]
+
+
+def _required_account_total(
+    rows: list[dict[str, Any]],
+    accounts: tuple[str, ...],
+) -> float | None:
+    values = [_account_value(rows, account) for account in accounts]
+    if any(value is None for value in values):
+        return None
+    return sum(float(value) for value in values if value is not None)
 
 
 def _sum_required_pair(first: float | None, second: float | None) -> float | None:
@@ -565,6 +623,18 @@ def _operating_result_ex_provisions(
         return None
     result = reported_result - expected_loss_result - other_expected_loss_result
     return result if result > 0 else None
+
+
+def _service_income_share(
+    service_income: float | None,
+    financial_intermediation_income: float | None,
+) -> float | None:
+    if service_income is None or financial_intermediation_income is None:
+        return None
+    operating_revenue_proxy = service_income + financial_intermediation_income
+    if operating_revenue_proxy <= 0:
+        return None
+    return service_income / operating_revenue_proxy
 
 
 def _average_positive(first: float | None, second: float | None) -> float | None:
