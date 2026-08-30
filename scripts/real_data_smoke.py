@@ -60,43 +60,47 @@ def _copy_if_exists(source: Path, destination: Path) -> None:
 
 def _normalized_search_text(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
-    return "".join(character for character in text if not unicodedata.combining(character)).lower()
+    return "".join(
+        character for character in text if not unicodedata.combining(character)
+    ).lower()
 
 
-def _prior_ifdata_summary_candidates(
+def _ifdata_report_candidates(
     dataset: BootstrapDataset,
     *,
     company_id: str,
     year: int,
+    report_number: str,
+    terms: tuple[str, ...],
 ) -> dict[str, Any]:
     issuer = next(
         (row for row in dataset.issuers() if row.company_id == company_id),
         None,
     )
     if issuer is None or not issuer.cnpj:
-        return {"error": "issuer/CNPJ unavailable for historical IFData diagnostics"}
+        return {"error": "issuer/CNPJ unavailable for IFData diagnostics"}
 
-    prior_ano_mes = (year - 1) * 100 + 12
+    ano_mes = year * 100 + 12
     raw_dir = dataset.run_dir / "raw" / "bcb" / "ifdata" / str(year)
-    cadastro_path = raw_dir / f"{prior_ano_mes}_cadastro.json"
-    summary_path = raw_dir / f"{prior_ano_mes}_report_1.json"
-    if not cadastro_path.is_file() or not summary_path.is_file():
-        return {"error": "historical IFData raw payloads unavailable"}
+    cadastro_path = raw_dir / f"{ano_mes}_cadastro.json"
+    report_path = raw_dir / f"{ano_mes}_report_{report_number}.json"
+    if not cadastro_path.is_file() or not report_path.is_file():
+        return {"error": f"IFData report {report_number} raw payload unavailable"}
 
     identity = resolve_prudential_identity(
         cadastro_path.read_bytes(),
         cnpj=issuer.cnpj,
-        ano_mes=prior_ano_mes,
+        ano_mes=ano_mes,
     )
     if identity is None:
-        return {"error": "historical IFData prudential identity unavailable"}
+        return {"error": "IFData prudential identity unavailable"}
 
-    payload = json.loads(summary_path.read_bytes())
+    payload = json.loads(report_path.read_bytes())
     rows = payload.get("value") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
-        return {"error": "historical IFData report 1 has invalid value payload"}
+        return {"error": f"IFData report {report_number} has invalid value payload"}
 
-    terms = ("ativo", "patrimonio", "carteira", "credito")
+    normalized_terms = tuple(_normalized_search_text(term) for term in terms)
     candidates: list[dict[str, Any]] = []
     institution_row_count = 0
     for raw_row in rows:
@@ -109,7 +113,7 @@ def _prior_ifdata_summary_candidates(
             _normalized_search_text(raw_row.get(field))
             for field in ("Grupo", "NomeColuna", "DescricaoColuna")
         )
-        if not any(term in searchable for term in terms):
+        if not any(term in searchable for term in normalized_terms):
             continue
         candidates.append(
             {
@@ -125,8 +129,9 @@ def _prior_ifdata_summary_candidates(
         )
 
     return {
-        "ano_mes": prior_ano_mes,
+        "ano_mes": ano_mes,
         "cod_inst": identity.cod_inst,
+        "report_number": report_number,
         "institution_row_count": institution_row_count,
         "candidates": candidates,
     }
@@ -247,11 +252,6 @@ def _itub_bank_profile(
             "prior_gross_credit_portfolio": profile.prior_gross_credit_portfolio,
             "annual_net_income": profile.annual_net_income,
             "annual_credit_loss_result": profile.annual_credit_loss_result,
-            "prior_summary_discovery": _prior_ifdata_summary_candidates(
-                dataset,
-                company_id=company_id,
-                year=year,
-            ),
         }
         raise RuntimeError(
             "ITUB4 IFData profile is missing verified bank metrics: "
@@ -316,6 +316,22 @@ def run_smoke(
         missing_price_tickers = sorted(requested - price_tickers)
         routes = _sector_routes(dataset, requested, registry)
         bank_profile = _itub_bank_profile(dataset, routes, year=year)
+        income_statement_discovery = None
+        if "ITUB4" in routes:
+            income_statement_discovery = _ifdata_report_candidates(
+                dataset,
+                company_id=str(routes["ITUB4"]["company_id"]),
+                year=year,
+                report_number="4",
+                terms=(
+                    "receita",
+                    "despesa",
+                    "serviço",
+                    "intermediação",
+                    "operacional",
+                    "juros",
+                ),
+            )
 
         coverage = FundamentalCoverageProfiler(
             dataset,
@@ -367,6 +383,7 @@ def run_smoke(
                 "price_tickers_found": sorted(price_tickers),
                 "sector_routes": routes,
                 "bank_profile": bank_profile,
+                "ifdata_income_statement_discovery": income_statement_discovery,
                 "coverage": {
                     "companies": coverage.companies,
                     "company_years": coverage.company_years,
