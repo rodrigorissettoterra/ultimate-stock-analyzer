@@ -125,16 +125,33 @@ def apply_adjusted_closes(
 class B3CotahistCollector:
     timeout_seconds: float = 60.0
     user_agent: str = "ultimate-stock-analyzer/0.9"
+    max_attempts: int = 3
 
     def download_year_archive(self, year: int) -> bytes:
         current_year = datetime.now(UTC).year
         if year < 1986 or year > current_year:
             raise ValueError("year is outside the public B3 historical-series range")
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+
         url = B3_COTAHIST_YEAR_URL.format(year=year)
+        headers = {"User-Agent": self.user_agent}
         with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
-            response = client.get(url, headers={"User-Agent": self.user_agent})
-            response.raise_for_status()
-        return response.content
+            for attempt in range(1, self.max_attempts + 1):
+                try:
+                    response = client.get(url, headers=headers)
+                except httpx.TransportError:
+                    if attempt == self.max_attempts:
+                        raise
+                    continue
+
+                retryable_status = response.status_code == 429 or response.status_code >= 500
+                if retryable_status and attempt < self.max_attempts:
+                    continue
+                response.raise_for_status()
+                return response.content
+
+        raise RuntimeError("B3 COTAHIST download exhausted without a response")
 
     def parse_year_archive(
         self,

@@ -4,6 +4,7 @@ import argparse
 import gzip
 import json
 import shutil
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from ultimate_stock_analyzer.bootstrap import (
     PublicDataBootstrapPlan,
     PublicDataBootstrapService,
 )
+from ultimate_stock_analyzer.collectors.bcb_ifdata import resolve_prudential_identity
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 EXPECTED_SMOKE_MODELS = {
@@ -54,6 +56,80 @@ def _copy_if_exists(source: Path, destination: Path) -> None:
     if source.is_file():
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
+
+
+def _normalized_search_text(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(character for character in text if not unicodedata.combining(character)).lower()
+
+
+def _prior_ifdata_summary_candidates(
+    dataset: BootstrapDataset,
+    *,
+    company_id: str,
+    year: int,
+) -> dict[str, Any]:
+    issuer = next(
+        (row for row in dataset.issuers() if row.company_id == company_id),
+        None,
+    )
+    if issuer is None or not issuer.cnpj:
+        return {"error": "issuer/CNPJ unavailable for historical IFData diagnostics"}
+
+    prior_ano_mes = (year - 1) * 100 + 12
+    raw_dir = dataset.run_dir / "raw" / "bcb" / "ifdata" / str(year)
+    cadastro_path = raw_dir / f"{prior_ano_mes}_cadastro.json"
+    summary_path = raw_dir / f"{prior_ano_mes}_report_1.json"
+    if not cadastro_path.is_file() or not summary_path.is_file():
+        return {"error": "historical IFData raw payloads unavailable"}
+
+    identity = resolve_prudential_identity(
+        cadastro_path.read_bytes(),
+        cnpj=issuer.cnpj,
+        ano_mes=prior_ano_mes,
+    )
+    if identity is None:
+        return {"error": "historical IFData prudential identity unavailable"}
+
+    payload = json.loads(summary_path.read_bytes())
+    rows = payload.get("value") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return {"error": "historical IFData report 1 has invalid value payload"}
+
+    terms = ("ativo", "patrimonio", "carteira", "credito")
+    candidates: list[dict[str, Any]] = []
+    institution_row_count = 0
+    for raw_row in rows:
+        if not isinstance(raw_row, dict):
+            continue
+        if str(raw_row.get("CodInst") or "").strip() != identity.cod_inst:
+            continue
+        institution_row_count += 1
+        searchable = " ".join(
+            _normalized_search_text(raw_row.get(field))
+            for field in ("Grupo", "NomeColuna", "DescricaoColuna")
+        )
+        if not any(term in searchable for term in terms):
+            continue
+        candidates.append(
+            {
+                field: raw_row.get(field)
+                for field in (
+                    "Conta",
+                    "Grupo",
+                    "NomeColuna",
+                    "DescricaoColuna",
+                    "Saldo",
+                )
+            }
+        )
+
+    return {
+        "ano_mes": prior_ano_mes,
+        "cod_inst": identity.cod_inst,
+        "institution_row_count": institution_row_count,
+        "candidates": candidates,
+    }
 
 
 def _sector_routes(
@@ -120,6 +196,82 @@ def _sector_routes(
     return routes
 
 
+def _itub_bank_profile(
+    dataset: BootstrapDataset,
+    routes: dict[str, dict[str, Any]],
+    *,
+    year: int,
+) -> dict[str, Any] | None:
+    if "ITUB4" not in routes:
+        return None
+    company_id = str(routes["ITUB4"]["company_id"])
+    profiles = [
+        row
+        for row in dataset.bank_profiles()
+        if row.company_id == company_id and row.fiscal_year == year
+    ]
+    if len(profiles) != 1:
+        raise RuntimeError(
+            f"expected one IFData bank profile for ITUB4/{year}, found {len(profiles)}"
+        )
+    profile = profiles[0]
+    if profile.source_scope != "PRUDENTIAL_CONGLOMERATE":
+        raise RuntimeError(
+            f"ITUB4 IFData source scope is not prudential: {profile.source_scope}"
+        )
+    if profile.institution_type != 1:
+        raise RuntimeError(
+            f"ITUB4 IFData institution type is not prudential: {profile.institution_type}"
+        )
+    if profile.point_in_time_eligible:
+        raise RuntimeError(
+            "latest-state IFData bank profile must not be point-in-time eligible"
+        )
+
+    required_metrics = {
+        "roe": profile.roe,
+        "roa": profile.roa,
+        "cost_of_credit": profile.cost_of_credit,
+        "basel_ratio": profile.basel_ratio,
+        "tier1_ratio": profile.tier1_ratio,
+        "equity_to_assets": profile.equity_to_assets,
+    }
+    missing = sorted(name for name, value in required_metrics.items() if value is None)
+    if missing:
+        diagnostic_fields = {
+            "total_assets": profile.total_assets,
+            "prior_total_assets": profile.prior_total_assets,
+            "equity": profile.equity,
+            "prior_equity": profile.prior_equity,
+            "gross_credit_portfolio": profile.gross_credit_portfolio,
+            "prior_gross_credit_portfolio": profile.prior_gross_credit_portfolio,
+            "annual_net_income": profile.annual_net_income,
+            "annual_credit_loss_result": profile.annual_credit_loss_result,
+            "prior_summary_discovery": _prior_ifdata_summary_candidates(
+                dataset,
+                company_id=company_id,
+                year=year,
+            ),
+        }
+        raise RuntimeError(
+            "ITUB4 IFData profile is missing verified bank metrics: "
+            + ", ".join(missing)
+            + "; evidence="
+            + json.dumps(diagnostic_fields, sort_keys=True, default=str)
+        )
+    return {
+        "company_id": profile.company_id,
+        "fiscal_year": profile.fiscal_year,
+        "ifdata_cod_inst": profile.ifdata_cod_inst,
+        "ifdata_name": profile.ifdata_name,
+        "source_scope": profile.source_scope,
+        "institution_type": profile.institution_type,
+        "available_from_estimate": profile.available_from_estimate,
+        "point_in_time_eligible": profile.point_in_time_eligible,
+        **required_metrics,
+    }
+
+
 def run_smoke(
     *,
     year: int,
@@ -136,7 +288,7 @@ def run_smoke(
         repo_root / "config/scoring/sector_registry_v0.6.yml"
     )
     summary: dict[str, Any] = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "status": "FAILED",
         "year": year,
         "tickers": sorted(requested),
@@ -151,6 +303,7 @@ def run_smoke(
                 end_year=year,
                 tickers=tuple(sorted(requested)),
                 include_current_sector_classification=True,
+                include_bank_ifdata=True,
             ),
             collected_at=started_at,
             run_id=run_id,
@@ -162,6 +315,7 @@ def run_smoke(
         missing_security_tickers = sorted(requested - security_tickers)
         missing_price_tickers = sorted(requested - price_tickers)
         routes = _sector_routes(dataset, requested, registry)
+        bank_profile = _itub_bank_profile(dataset, routes, year=year)
 
         coverage = FundamentalCoverageProfiler(
             dataset,
@@ -182,6 +336,8 @@ def run_smoke(
             raise RuntimeError("bootstrap returned no financial statement lines")
         if manifest.counts.get("price_bars", 0) <= 0:
             raise RuntimeError("bootstrap returned no B3 price bars")
+        if "ITUB4" in requested and manifest.counts.get("bank_prudential_profiles", 0) <= 0:
+            raise RuntimeError("bootstrap returned no BCB IFData bank profile")
         if missing_security_tickers:
             raise RuntimeError(
                 "requested tickers missing from normalized FCA security master: "
@@ -196,6 +352,10 @@ def run_smoke(
             raise RuntimeError(
                 "coverage profiler did not resolve a sector model for every company-year"
             )
+        if "ITUB4" in requested and coverage.bank_contract_available_company_years < 1:
+            raise RuntimeError(
+                "coverage profiler did not activate the bank IFData accounting contract"
+            )
 
         summary.update(
             {
@@ -206,6 +366,7 @@ def run_smoke(
                 "security_tickers_found": sorted(security_tickers),
                 "price_tickers_found": sorted(price_tickers),
                 "sector_routes": routes,
+                "bank_profile": bank_profile,
                 "coverage": {
                     "companies": coverage.companies,
                     "company_years": coverage.company_years,
@@ -220,6 +381,9 @@ def run_smoke(
                     ),
                     "resolved_sector_model_company_years": (
                         coverage.resolved_sector_model_company_years
+                    ),
+                    "bank_contract_available_company_years": (
+                        coverage.bank_contract_available_company_years
                     ),
                     "specialized_contract_required_company_years": (
                         coverage.specialized_contract_required_company_years
@@ -254,7 +418,7 @@ def run_smoke(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run a bounded real-data smoke test against official CVM/B3 sources."
+        description="Run a bounded real-data smoke test against official CVM/B3/BCB sources."
     )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--ticker", action="append", default=[])

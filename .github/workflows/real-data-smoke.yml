@@ -7,7 +7,10 @@ on:
       - ".github/workflows/real-data-smoke.yml"
       - "scripts/real_data_smoke.py"
       - "src/ultimate_stock_analyzer/bootstrap/**"
+      - "src/ultimate_stock_analyzer/collectors/bcb_ifdata.py"
       - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/domain/master.py"
+      - "src/ultimate_stock_analyzer/fundamentals/contracts.py"
       - "src/ultimate_stock_analyzer/market/prices.py"
       - "src/ultimate_stock_analyzer/normalization/cvm.py"
       - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
@@ -36,11 +39,16 @@ jobs:
       - name: Network preflight
         shell: bash
         run: |
-          echo "== DNS dados.cvm.gov.br =="
+          echo "== DNS public sources =="
           getent ahosts dados.cvm.gov.br || true
+          getent ahosts olinda.bcb.gov.br || true
           python - <<'PY'
           import socket
-          for host in ("dados.cvm.gov.br", "bvmf.bmfbovespa.com.br"):
+          for host in (
+              "dados.cvm.gov.br",
+              "bvmf.bmfbovespa.com.br",
+              "olinda.bcb.gov.br",
+          ):
               print(f"== getaddrinfo {host} ==")
               try:
                   for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM):
@@ -57,6 +65,9 @@ jobs:
           echo "== B3 IPv4 =="
           curl -4 -I -L --connect-timeout 10 --max-time 20 \
             "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A${{ steps.year.outputs.value }}.ZIP" || true
+          echo "== BCB IFData IPv4 =="
+          curl -4 -I -L --connect-timeout 10 --max-time 20 \
+            "https://olinda.bcb.gov.br/olinda/servico/IFDATA/versao/v1/odata/ListaDeRelatorio()?%24format=json" || true
       - name: Run official-source smoke test
         env:
           PYTHONUNBUFFERED: "1"

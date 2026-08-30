@@ -14,6 +14,11 @@ from pydantic import BaseModel, Field
 from ultimate_stock_analyzer.collectors.b3_classification import (
     B3IndustryClassificationCollector,
 )
+from ultimate_stock_analyzer.collectors.bcb_ifdata import (
+    BCBIFDataCollector,
+    IFDataAnnualCollection,
+    IFDataRawPayload,
+)
 from ultimate_stock_analyzer.collectors.cvm import CVMCollector
 from ultimate_stock_analyzer.domain.master import (
     FinancialStatementLine,
@@ -36,6 +41,7 @@ class PublicDataBootstrapPlan:
     document_type: str = "DFP"
     scope_token: str = "con"
     include_current_sector_classification: bool = False
+    include_bank_ifdata: bool = False
 
     def __post_init__(self) -> None:
         current_year = datetime.now(UTC).year
@@ -47,12 +53,20 @@ class PublicDataBootstrapPlan:
                 "use a year before the current UTC year"
             )
         normalized_tickers = tuple(
-            dict.fromkeys(ticker.strip().upper() for ticker in self.tickers if ticker.strip())
+            dict.fromkeys(
+                ticker.strip().upper()
+                for ticker in self.tickers
+                if ticker.strip()
+            )
         )
         if self.tickers and not normalized_tickers:
             raise ValueError("ticker filter contains no valid ticker")
         normalized_statements = tuple(
-            dict.fromkeys(statement.strip().upper() for statement in self.statements if statement.strip())
+            dict.fromkeys(
+                statement.strip().upper()
+                for statement in self.statements
+                if statement.strip()
+            )
         )
         if not normalized_statements:
             raise ValueError("at least one DFP statement is required")
@@ -74,7 +88,7 @@ class BootstrapArtifact(BaseModel):
 
 
 class PublicDataBootstrapManifest(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     run_id: str
     status: Literal["COMPLETE", "FAILED"]
     started_at: datetime
@@ -85,6 +99,7 @@ class PublicDataBootstrapManifest(BaseModel):
     statements: list[str]
     source_policy: str = "official_free_only"
     includes_current_sector_classification: bool = False
+    includes_bank_ifdata: bool = False
     artifacts: list[BootstrapArtifact] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
@@ -149,12 +164,22 @@ class _B3ClassificationSource(Protocol):
     ) -> list[SectorClassificationRecord]: ...
 
 
+class _IFDataAnnualSource(Protocol):
+    def collect_annual_bank_profiles(
+        self,
+        issuers: list[IssuerRecord],
+        *,
+        fiscal_year: int,
+        collected_at: datetime,
+    ) -> IFDataAnnualCollection: ...
+
+
 class PublicDataBootstrapService:
     """Materialize exact public-source payloads and normalized historical records.
 
-    This stage deliberately stops before investment scoring. Its output is the auditable,
-    point-in-time input layer required by later universe scoring and walk-forward runs.
-    Current B3 sector classification is optional because it is not historical evidence.
+    This stage deliberately stops before investment scoring. Its output is the auditable
+    evidence layer required by later universe scoring and validation. Current B3 sector
+    classification and latest-state IFData history carry explicit point-in-time limitations.
     """
 
     def __init__(
@@ -165,15 +190,19 @@ class PublicDataBootstrapService:
         cvm_normalizer: _CVMArchiveNormalizer | None = None,
         price_source: _PriceArchiveSource | None = None,
         classification_source: _B3ClassificationSource | None = None,
+        ifdata_source: _IFDataAnnualSource | None = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         collector = cvm_source or CVMCollector()
         self.cvm_source = collector
-        self.cvm_normalizer = cvm_normalizer or CVMIngestionService(collector=collector)
+        self.cvm_normalizer = cvm_normalizer or CVMIngestionService(
+            collector=collector
+        )
         self.price_source = price_source or B3CotahistCollector()
         self.classification_source = (
             classification_source or B3IndustryClassificationCollector()
         )
+        self.ifdata_source = ifdata_source or BCBIFDataCollector()
 
     def run(
         self,
@@ -236,10 +265,18 @@ class PublicDataBootstrapService:
                 )
                 if plan.tickers:
                     requested = set(plan.tickers)
-                    securities = [item for item in securities if item.ticker.upper() in requested]
+                    securities = [
+                        item
+                        for item in securities
+                        if item.ticker.upper() in requested
+                    ]
                 securities_by_year[year] = securities
-                selected_company_ids.update(item.company_id for item in securities)
-                seen_tickers.update(item.ticker.upper() for item in securities)
+                selected_company_ids.update(
+                    item.company_id for item in securities
+                )
+                seen_tickers.update(
+                    item.ticker.upper() for item in securities
+                )
                 artifacts.append(
                     _write_jsonl_gz(
                         run_dir,
@@ -258,7 +295,11 @@ class PublicDataBootstrapService:
                         "requested tickers absent from FCA security master: "
                         + ", ".join(missing_tickers)
                     )
-                issuers = [item for item in issuers if item.company_id in selected_company_ids]
+                issuers = [
+                    item
+                    for item in issuers
+                    if item.company_id in selected_company_ids
+                ]
 
             artifacts.append(
                 _write_jsonl_gz(
@@ -270,11 +311,15 @@ class PublicDataBootstrapService:
                 )
             )
             counts["issuers"] = len(issuers)
-            counts["securities"] = sum(len(items) for items in securities_by_year.values())
+            counts["securities"] = sum(
+                len(items) for items in securities_by_year.values()
+            )
 
             if plan.include_current_sector_classification:
                 workbook_bytes = self.classification_source.download_workbook()
-                catalog_bytes = self.classification_source.download_company_catalog_archive()
+                catalog_bytes = (
+                    self.classification_source.download_company_catalog_archive()
+                )
                 artifacts.append(
                     _write_bytes(
                         run_dir,
@@ -316,7 +361,10 @@ class PublicDataBootstrapService:
                 artifacts.append(
                     _write_jsonl_gz(
                         run_dir,
-                        Path("normalized/b3/industry_classification_current.jsonl.gz"),
+                        Path(
+                            "normalized/b3/"
+                            "industry_classification_current.jsonl.gz"
+                        ),
                         classifications,
                         name="b3_sector_classification",
                         source="B3_INDUSTRY_CLASSIFICATION",
@@ -328,30 +376,82 @@ class PublicDataBootstrapService:
                     "is not point-in-time eligible for historical walk-forward/backtests."
                 )
 
+            if plan.include_bank_ifdata:
+                bank_profile_count = 0
+                for year in range(plan.start_year, plan.end_year + 1):
+                    collection = self.ifdata_source.collect_annual_bank_profiles(
+                        issuers,
+                        fiscal_year=year,
+                        collected_at=started_at,
+                    )
+                    for payload in collection.raw_payloads:
+                        artifacts.append(
+                            _write_bytes(
+                                run_dir,
+                                _ifdata_raw_path(year, payload),
+                                payload.content,
+                                name="bcb_ifdata_raw",
+                                source="BCB_IFDATA",
+                                reference_year=year,
+                            )
+                        )
+                    profiles = list(collection.profiles)
+                    bank_profile_count += len(profiles)
+                    artifacts.append(
+                        _write_jsonl_gz(
+                            run_dir,
+                            Path(
+                                "normalized/bcb/"
+                                f"ifdata_bank_profiles_{year}.jsonl.gz"
+                            ),
+                            profiles,
+                            name="bcb_ifdata_bank_profile",
+                            source="BCB_IFDATA",
+                            reference_year=year,
+                        )
+                    )
+                    warnings.extend(collection.warnings)
+                counts["bank_prudential_profiles"] = bank_profile_count
+                warnings.append(
+                    "IFData annual bank profiles use exact prudential-conglomerate "
+                    "identity and verified report accounts, but historical API rows "
+                    "are latest-state values without revision history; they are not "
+                    "point-in-time eligible for strict backtests."
+                )
+
             statement_count = 0
             price_count = 0
             for year in range(plan.start_year, plan.end_year + 1):
-                dfp_bytes = self.cvm_source.download_zip(plan.document_type, year)
+                dfp_bytes = self.cvm_source.download_zip(
+                    plan.document_type, year
+                )
                 artifacts.append(
                     _write_bytes(
                         run_dir,
-                        Path(f"raw/cvm/{plan.document_type.lower()}_cia_aberta_{year}.zip"),
+                        Path(
+                            f"raw/cvm/"
+                            f"{plan.document_type.lower()}_cia_aberta_{year}.zip"
+                        ),
                         dfp_bytes,
                         name="cvm_financial_statements_raw",
                         source=f"CVM_{plan.document_type}",
                         reference_year=year,
                     )
                 )
-                statements = self.cvm_normalizer.load_statements_from_archive(
-                    dfp_bytes,
-                    document_type=plan.document_type,
-                    statements=plan.statements,
-                    scope_token=plan.scope_token,
-                    collected_at=started_at,
+                statements = (
+                    self.cvm_normalizer.load_statements_from_archive(
+                        dfp_bytes,
+                        document_type=plan.document_type,
+                        statements=plan.statements,
+                        scope_token=plan.scope_token,
+                        collected_at=started_at,
+                    )
                 )
                 if plan.tickers:
                     statements = [
-                        item for item in statements if item.company_id in selected_company_ids
+                        item
+                        for item in statements
+                        if item.company_id in selected_company_ids
                     ]
                 statement_count += len(statements)
                 artifacts.append(
@@ -406,6 +506,7 @@ class PublicDataBootstrapService:
                 includes_current_sector_classification=(
                     plan.include_current_sector_classification
                 ),
+                includes_bank_ifdata=plan.include_bank_ifdata,
                 artifacts=artifacts,
                 counts=counts,
                 warnings=warnings,
@@ -427,6 +528,7 @@ class PublicDataBootstrapService:
                 includes_current_sector_classification=(
                     plan.include_current_sector_classification
                 ),
+                includes_bank_ifdata=plan.include_bank_ifdata,
                 artifacts=artifacts,
                 counts=counts,
                 warnings=warnings,
@@ -436,8 +538,25 @@ class PublicDataBootstrapService:
             raise
 
 
+def _ifdata_raw_path(
+    fiscal_year: int,
+    payload: IFDataRawPayload,
+) -> Path:
+    suffix = (
+        "cadastro"
+        if payload.kind == "cadastro"
+        else f"report_{payload.report_number}"
+    )
+    return Path(
+        f"raw/bcb/ifdata/{fiscal_year}/"
+        f"{payload.ano_mes}_{suffix}.json"
+    )
+
+
 def _run_id(started_at: datetime) -> str:
-    return f"public-{started_at:%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
+    return (
+        f"public-{started_at:%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
+    )
 
 
 def _write_bytes(
@@ -477,7 +596,13 @@ def _write_jsonl_gz(
     with gzip.open(path, "wt", encoding="utf-8", newline="\n") as file:
         for row in rows:
             payload = _json_payload(row)
-            file.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            file.write(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
             file.write("\n")
     return _artifact(
         run_dir,
@@ -500,7 +625,10 @@ def _json_payload(value: Any) -> Any:
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        return {
+            str(key): _json_safe(item)
+            for key, item in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     if isinstance(value, (date, datetime)):
@@ -531,7 +659,10 @@ def _artifact(
     )
 
 
-def _write_manifest(run_dir: Path, manifest: PublicDataBootstrapManifest) -> None:
+def _write_manifest(
+    run_dir: Path,
+    manifest: PublicDataBootstrapManifest,
+) -> None:
     path = run_dir / "manifest.json"
     path.write_text(
         manifest.model_dump_json(indent=2),

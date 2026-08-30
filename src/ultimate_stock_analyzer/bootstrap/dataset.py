@@ -11,6 +11,7 @@ from ultimate_stock_analyzer.bootstrap.public_data import (
     PublicDataBootstrapManifest,
 )
 from ultimate_stock_analyzer.domain.master import (
+    BankPrudentialAnnualRecord,
     FinancialStatementLine,
     IssuerRecord,
     SectorClassificationRecord,
@@ -85,17 +86,43 @@ class BootstrapDataset:
             by_company[row.company_id] = row
         return list(by_company.values())
 
+    def bank_profiles(self) -> list[BankPrudentialAnnualRecord]:
+        rows: list[BankPrudentialAnnualRecord] = []
+        for artifact in self._many("bcb_ifdata_bank_profile"):
+            rows.extend(self._read_models(artifact, BankPrudentialAnnualRecord))
+        by_company_year: dict[tuple[str, int], BankPrudentialAnnualRecord] = {}
+        for row in rows:
+            key = (row.company_id, row.fiscal_year)
+            existing = by_company_year.get(key)
+            if existing is not None and existing != row:
+                raise ValueError(
+                    "bootstrap contains conflicting IFData bank profiles for "
+                    f"{row.company_id}/{row.fiscal_year}"
+                )
+            by_company_year[key] = row
+        return list(by_company_year.values())
+
     def _one(self, name: str) -> BootstrapArtifact:
         artifacts = self._many(name)
         if len(artifacts) != 1:
-            raise ValueError(f"expected one bootstrap artifact named {name}, found {len(artifacts)}")
+            raise ValueError(
+                f"expected one bootstrap artifact named {name}, found {len(artifacts)}"
+            )
         return artifacts[0]
 
     def _many(self, name: str) -> list[BootstrapArtifact]:
-        artifacts = [artifact for artifact in self.manifest.artifacts if artifact.name == name]
+        artifacts = [
+            artifact
+            for artifact in self.manifest.artifacts
+            if artifact.name == name
+        ]
         return sorted(
             artifacts,
-            key=lambda item: (item.reference_year is None, item.reference_year or -1, item.path),
+            key=lambda item: (
+                item.reference_year is None,
+                item.reference_year or -1,
+                item.path,
+            ),
         )
 
     def _read_models[T: BaseModel](

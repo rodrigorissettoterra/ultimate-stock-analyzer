@@ -10,13 +10,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
+from ultimate_stock_analyzer.collectors.bcb_ifdata import bank_contract_values
 from ultimate_stock_analyzer.domain.master import (
+    BankPrudentialAnnualRecord,
     FinancialStatementLine,
     IssuerRecord,
     SectorClassificationRecord,
     SecurityRecord,
 )
 from ultimate_stock_analyzer.fundamentals.contracts import (
+    BANK_PRUDENTIAL_CONTRACT,
     GENERAL_CORPORATE_CONTRACT,
     evaluate_contract,
 )
@@ -25,6 +28,7 @@ from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 CoverageApplicability = Literal[
     "GENERAL_CORPORATE_APPLICABLE",
+    "BANK_ACCOUNTING_CONTRACT_AVAILABLE",
     "SPECIALIZED_ACCOUNTING_CONTRACT_REQUIRED",
     "UNRESOLVED_SECTOR_CLASSIFICATION",
     "UNRESOLVED_SECTOR_MODEL",
@@ -68,7 +72,7 @@ class FundamentalCoverageRecord(BaseModel):
 
 
 class FundamentalCoverageSummary(BaseModel):
-    schema_version: str = "1.1"
+    schema_version: str = "1.2"
     bootstrap_run_id: str
     bootstrap_manifest_sha256: str
     generated_at: datetime
@@ -81,6 +85,7 @@ class FundamentalCoverageSummary(BaseModel):
     point_in_time_critical_complete_company_years: int = Field(ge=0)
     longitudinal_pair_ready_company_years: int = Field(ge=0)
     resolved_sector_model_company_years: int = Field(ge=0)
+    bank_contract_available_company_years: int = Field(ge=0)
     specialized_contract_required_company_years: int = Field(ge=0)
     general_corporate_applicable_company_years: int = Field(ge=0)
     mean_critical_coverage: float = Field(ge=0.0, le=1.0)
@@ -113,6 +118,10 @@ class FundamentalCoverageProfiler:
         classifications = {
             item.company_id: item for item in self.dataset.sector_classifications()
         }
+        bank_profiles = {
+            (item.company_id, item.fiscal_year): item
+            for item in self.dataset.bank_profiles()
+        }
 
         by_period: dict[tuple[str, date], list[FinancialStatementLine]] = defaultdict(list)
         for line in statements:
@@ -125,72 +134,25 @@ class FundamentalCoverageProfiler:
             issuer = issuers.get(company_id)
             if issuer is None:
                 issuer = _issuer_from_line(lines[0])
-            extraction = extract_fixed_accounts(
-                lines,
-                company_id=company_id,
-                reference_date=reference_date,
-                consolidation_scope=None,
-            )
-            coverage = evaluate_contract(extraction.values)
-            critical_names = set(GENERAL_CORPORATE_CONTRACT.critical_inputs)
-            untimed_critical = sorted(
-                name
-                for name in critical_names
-                if name in extraction.lines
-                and extraction.lines[name].available_from is None
-            )
-            timed_critical = sum(
-                1
-                for name in critical_names
-                if name in extraction.lines
-                and extraction.lines[name].available_from is not None
-            )
-            point_in_time_coverage = (
-                timed_critical / len(critical_names) if critical_names else 1.0
-            )
-            available_times = [
-                line.available_from
-                for line in extraction.lines.values()
-                if line.available_from is not None
-            ]
-            source_documents = sorted(
-                {
-                    line.source_document
-                    for line in extraction.lines.values()
-                    if line.source_document
-                }
-            )
             sector_context = self._sector_context(classifications.get(company_id))
-            records.append(
-                FundamentalCoverageRecord(
-                    company_id=company_id,
-                    cvm_code=issuer.cvm_code,
-                    company_name=issuer.legal_name,
-                    tickers=_tickers_for_period(securities, company_id, reference_date),
+            bank_profile = bank_profiles.get((company_id, reference_date.year))
+            if sector_context["sector_model_id"] == "banks" and bank_profile is not None:
+                record = _bank_coverage_record(
+                    issuer=issuer,
+                    securities=securities,
                     reference_date=reference_date,
-                    fiscal_year=reference_date.year,
-                    applicability=sector_context["applicability"],
-                    sector=sector_context["sector"],
-                    subsector=sector_context["subsector"],
-                    segment=sector_context["segment"],
-                    listing_segment=sector_context["listing_segment"],
-                    sector_model_id=sector_context["sector_model_id"],
-                    sector_model_reason=sector_context["sector_model_reason"],
-                    sector_model_is_fallback=sector_context["sector_model_is_fallback"],
-                    sector_classification_point_in_time_eligible=sector_context[
-                        "point_in_time_eligible"
-                    ],
-                    extracted_accounts=len(extraction.values),
-                    critical_coverage=coverage.critical_coverage,
-                    total_coverage=coverage.total_coverage,
-                    point_in_time_critical_coverage=point_in_time_coverage,
-                    missing_critical=list(coverage.missing_critical),
-                    missing_supporting=list(coverage.missing_supporting),
-                    untimed_critical=untimed_critical,
-                    source_documents=source_documents,
-                    latest_available_from=max(available_times) if available_times else None,
+                    sector_context=sector_context,
+                    profile=bank_profile,
                 )
-            )
+            else:
+                record = _general_coverage_record(
+                    issuer=issuer,
+                    securities=securities,
+                    reference_date=reference_date,
+                    lines=lines,
+                    sector_context=sector_context,
+                )
+            records.append(record)
 
         _mark_longitudinal_pairs(records)
         summary = _summary(records, self.dataset, generated_at)
@@ -275,6 +237,129 @@ class FundamentalCoverageProfiler:
         return summary
 
 
+def _bank_coverage_record(
+    *,
+    issuer: IssuerRecord,
+    securities: list[SecurityRecord],
+    reference_date: date,
+    sector_context: dict[str, object],
+    profile: BankPrudentialAnnualRecord,
+) -> FundamentalCoverageRecord:
+    values = bank_contract_values(profile)
+    coverage = evaluate_contract(values, BANK_PRUDENTIAL_CONTRACT)
+    critical_names = set(BANK_PRUDENTIAL_CONTRACT.critical_inputs)
+    point_in_time_coverage = (
+        coverage.critical_coverage if profile.point_in_time_eligible else 0.0
+    )
+    untimed_critical = (
+        []
+        if profile.point_in_time_eligible
+        else sorted(name for name in critical_names if name in values)
+    )
+    return FundamentalCoverageRecord(
+        company_id=issuer.company_id,
+        cvm_code=issuer.cvm_code,
+        company_name=issuer.legal_name,
+        tickers=_tickers_for_period(securities, issuer.company_id, reference_date),
+        reference_date=reference_date,
+        fiscal_year=reference_date.year,
+        contract=BANK_PRUDENTIAL_CONTRACT.name,
+        applicability="BANK_ACCOUNTING_CONTRACT_AVAILABLE",
+        sector=sector_context["sector"],
+        subsector=sector_context["subsector"],
+        segment=sector_context["segment"],
+        listing_segment=sector_context["listing_segment"],
+        sector_model_id=sector_context["sector_model_id"],
+        sector_model_reason=sector_context["sector_model_reason"],
+        sector_model_is_fallback=sector_context["sector_model_is_fallback"],
+        sector_classification_point_in_time_eligible=sector_context[
+            "point_in_time_eligible"
+        ],
+        extracted_accounts=len(values),
+        critical_coverage=coverage.critical_coverage,
+        total_coverage=coverage.total_coverage,
+        point_in_time_critical_coverage=point_in_time_coverage,
+        missing_critical=list(coverage.missing_critical),
+        missing_supporting=list(coverage.missing_supporting),
+        untimed_critical=untimed_critical,
+        source_documents=list(profile.source_documents),
+        latest_available_from=profile.available_from_estimate,
+    )
+
+
+def _general_coverage_record(
+    *,
+    issuer: IssuerRecord,
+    securities: list[SecurityRecord],
+    reference_date: date,
+    lines: list[FinancialStatementLine],
+    sector_context: dict[str, object],
+) -> FundamentalCoverageRecord:
+    extraction = extract_fixed_accounts(
+        lines,
+        company_id=issuer.company_id,
+        reference_date=reference_date,
+        consolidation_scope=None,
+    )
+    coverage = evaluate_contract(extraction.values)
+    critical_names = set(GENERAL_CORPORATE_CONTRACT.critical_inputs)
+    untimed_critical = sorted(
+        name
+        for name in critical_names
+        if name in extraction.lines
+        and extraction.lines[name].available_from is None
+    )
+    timed_critical = sum(
+        1
+        for name in critical_names
+        if name in extraction.lines
+        and extraction.lines[name].available_from is not None
+    )
+    point_in_time_coverage = (
+        timed_critical / len(critical_names) if critical_names else 1.0
+    )
+    available_times = [
+        line.available_from
+        for line in extraction.lines.values()
+        if line.available_from is not None
+    ]
+    source_documents = sorted(
+        {
+            line.source_document
+            for line in extraction.lines.values()
+            if line.source_document
+        }
+    )
+    return FundamentalCoverageRecord(
+        company_id=issuer.company_id,
+        cvm_code=issuer.cvm_code,
+        company_name=issuer.legal_name,
+        tickers=_tickers_for_period(securities, issuer.company_id, reference_date),
+        reference_date=reference_date,
+        fiscal_year=reference_date.year,
+        applicability=sector_context["applicability"],
+        sector=sector_context["sector"],
+        subsector=sector_context["subsector"],
+        segment=sector_context["segment"],
+        listing_segment=sector_context["listing_segment"],
+        sector_model_id=sector_context["sector_model_id"],
+        sector_model_reason=sector_context["sector_model_reason"],
+        sector_model_is_fallback=sector_context["sector_model_is_fallback"],
+        sector_classification_point_in_time_eligible=sector_context[
+            "point_in_time_eligible"
+        ],
+        extracted_accounts=len(extraction.values),
+        critical_coverage=coverage.critical_coverage,
+        total_coverage=coverage.total_coverage,
+        point_in_time_critical_coverage=point_in_time_coverage,
+        missing_critical=list(coverage.missing_critical),
+        missing_supporting=list(coverage.missing_supporting),
+        untimed_critical=untimed_critical,
+        source_documents=source_documents,
+        latest_available_from=max(available_times) if available_times else None,
+    )
+
+
 def _issuer_from_line(line: FinancialStatementLine) -> IssuerRecord:
     return IssuerRecord(
         company_id=line.company_id,
@@ -326,6 +411,10 @@ def _summary(
     )
     longitudinal = sum(record.longitudinal_pair_ready for record in records)
     resolved = sum(record.sector_model_id is not None for record in records)
+    bank_available = sum(
+        record.applicability == "BANK_ACCOUNTING_CONTRACT_AVAILABLE"
+        for record in records
+    )
     specialized = sum(
         record.applicability == "SPECIALIZED_ACCOUNTING_CONTRACT_REQUIRED"
         for record in records
@@ -364,6 +453,7 @@ def _summary(
         point_in_time_critical_complete_company_years=point_in_time_complete,
         longitudinal_pair_ready_company_years=longitudinal,
         resolved_sector_model_company_years=resolved,
+        bank_contract_available_company_years=bank_available,
         specialized_contract_required_company_years=specialized,
         general_corporate_applicable_company_years=general,
         mean_critical_coverage=mean(record.critical_coverage for record in records) if records else 0.0,
@@ -371,8 +461,9 @@ def _summary(
         coverage_buckets=buckets,
         sector_model_counts=dict(sorted(model_counts.items())),
         warnings=[
-            "Accounting coverage is still measured against the general-corporate contract.",
-            "For banks and insurers this coverage is diagnostic only; a specialized accounting contract is required before rankability.",
+            "General corporates use the CVM general-corporate accounting contract.",
+            "Banks with normalized IFData evidence use bank_prudential_ifdata_v1; insurers still require a specialized accounting contract.",
+            "IFData annual bank profiles are latest-state historical rows and are not point-in-time eligible until revision history is captured.",
             "B3 sector classification is a current collection-time snapshot and is not point-in-time eligible for historical walk-forward/backtests.",
             "Coverage readiness and sector routing are not investment scores or recommendations.",
         ],
