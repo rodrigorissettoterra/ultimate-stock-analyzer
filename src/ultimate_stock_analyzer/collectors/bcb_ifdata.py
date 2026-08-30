@@ -31,9 +31,21 @@ _REPORT_SUMMARY = "1"
 _REPORT_INCOME = "4"
 _REPORT_CAPITAL = "5"
 
-_ACCOUNT_TOTAL_ASSETS = "140220"
-_ACCOUNT_EQUITY = "140246"
-_ACCOUNT_GROSS_CREDIT_PORTFOLIO = "141873"
+# IFData report 1 changed its summary account identifiers at the 2025 COSIF
+# transition. These mappings are explicit evidence contracts, not name-based
+# inference. The pre-2025 identifiers were verified against the official
+# 2024-12 prudential-conglomerate payload for C0080099.
+_SUMMARY_ACCOUNTS_PRE_2025 = {
+    "total_assets": "78182",
+    "gross_credit_portfolio": "78183",
+    "equity": "78186",
+}
+_SUMMARY_ACCOUNTS_2025 = {
+    "total_assets": "140220",
+    "equity": "140246",
+    "gross_credit_portfolio": "141873",
+}
+
 _ACCOUNT_NET_INCOME = "141870"
 _ACCOUNT_CREDIT_LOSS_RESULT = "141840"
 _ACCOUNT_BASEL_RATIO = "79664"
@@ -311,17 +323,40 @@ def build_annual_bank_profile(
         second_half_income, current_identity.cod_inst
     )
 
-    total_assets = _account_value(current_summary_rows, _ACCOUNT_TOTAL_ASSETS)
-    equity = _account_value(current_summary_rows, _ACCOUNT_EQUITY)
+    current_summary_accounts = _summary_accounts(current_identity.ano_mes)
+    prior_summary_accounts = (
+        _summary_accounts(prior_identity.ano_mes)
+        if prior_identity is not None
+        else None
+    )
+
+    total_assets = _account_value(
+        current_summary_rows, current_summary_accounts["total_assets"]
+    )
+    equity = _account_value(
+        current_summary_rows, current_summary_accounts["equity"]
+    )
     gross_credit = _account_value(
-        current_summary_rows, _ACCOUNT_GROSS_CREDIT_PORTFOLIO
+        current_summary_rows,
+        current_summary_accounts["gross_credit_portfolio"],
     )
-    prior_total_assets = _account_value(
-        prior_summary_rows, _ACCOUNT_TOTAL_ASSETS
+    prior_total_assets = (
+        _account_value(prior_summary_rows, prior_summary_accounts["total_assets"])
+        if prior_summary_accounts is not None
+        else None
     )
-    prior_equity = _account_value(prior_summary_rows, _ACCOUNT_EQUITY)
-    prior_gross_credit = _account_value(
-        prior_summary_rows, _ACCOUNT_GROSS_CREDIT_PORTFOLIO
+    prior_equity = (
+        _account_value(prior_summary_rows, prior_summary_accounts["equity"])
+        if prior_summary_accounts is not None
+        else None
+    )
+    prior_gross_credit = (
+        _account_value(
+            prior_summary_rows,
+            prior_summary_accounts["gross_credit_portfolio"],
+        )
+        if prior_summary_accounts is not None
+        else None
     )
 
     first_half_net_income = _account_value(first_half_rows, _ACCOUNT_NET_INCOME)
@@ -420,6 +455,10 @@ def bank_contract_values(record: BankPrudentialAnnualRecord) -> dict[str, float]
         if value is not None:
             values[name] = float(value)
     return values
+
+
+def _summary_accounts(ano_mes: int) -> dict[str, str]:
+    return _SUMMARY_ACCOUNTS_2025 if ano_mes >= 202501 else _SUMMARY_ACCOUNTS_PRE_2025
 
 
 def _rows(content: bytes) -> list[dict[str, Any]]:
