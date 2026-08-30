@@ -27,20 +27,45 @@ For Itaú in the 2025 annual smoke, this resolves to prudential conglomerate `C0
 
 ## Official reports used
 
-The first contract reads only verified IFData reports and accounts:
+The first contract reads only verified IFData reports and accounts.
 
-- Report 1 — `Resumo`
-  - `140220`: Ativo Total
-  - `140246`: Patrimônio Líquido
-  - `141873`: Carteira de Crédito
-- Report 4 — `Demonstração de Resultado`
-  - `141870`: Lucro Líquido
-  - `141840`: Resultado com Perda Esperada de Operações de Crédito
-- Report 5 — `Informações de Capital`
-  - `79659`: Índice de Capital Principal
-  - `79660`: Índice de Capital Nível I
-  - `79661`: Razão de Alavancagem
-  - `79664`: Índice de Basileia
+### Report 1 — `Resumo`
+
+IFData changed the report-1 summary account identifiers at the 2025 accounting-layout
+transition. The collector therefore uses an explicit period-based account map rather than
+assuming that one identifier is stable across the boundary.
+
+For reference periods **before 2025-01**:
+
+- `78182`: Ativo Total
+- `78183`: Carteira de Crédito Classificada
+- `78186`: Patrimônio Líquido
+
+These identifiers were verified in the official IFData `202412` prudential-conglomerate payload
+for `C0080099`. The same row descriptions expose the underlying report formulas, respectively
+`[10000007] + [20000004]`, `[31000000]`, and
+`[60000002] + [70000009] + [80000006]`.
+
+For reference periods **from 2025-01 onward**:
+
+- `140220`: Ativo Total
+- `140246`: Patrimônio Líquido
+- `141873`: Carteira de Crédito
+
+The production implementation selects the account set from the reference period (`AnoMes`). It
+does not infer an account from its Portuguese label at runtime.
+
+### Report 4 — `Demonstração de Resultado`
+
+- `141870`: Lucro Líquido
+- `141840`: Resultado com Perda Esperada de Operações de Crédito
+
+### Report 5 — `Informações de Capital`
+
+- `79659`: Índice de Capital Principal
+- `79660`: Índice de Capital Nível I
+- `79661`: Razão de Alavancagem
+- `79664`: Índice de Basileia
 
 The production collector intentionally does not use an OData `$filter` on `CodInst`.
 The current service returned an incompatible-type error for that expression during contract
@@ -79,6 +104,8 @@ and carries the official:
 - `leverage_ratio`.
 
 The denominator helper fails to `UNKNOWN` when a required balance is missing or non-positive.
+A layout transition is not treated as missing evidence when the corresponding official account
+identifier has been explicitly verified for that period.
 
 ## Metrics deliberately left UNKNOWN
 
