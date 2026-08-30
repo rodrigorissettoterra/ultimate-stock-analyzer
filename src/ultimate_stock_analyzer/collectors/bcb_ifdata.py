@@ -46,8 +46,30 @@ _SUMMARY_ACCOUNTS_2025 = {
     "gross_credit_portfolio": "141873",
 }
 
-_ACCOUNT_NET_INCOME = "141870"
-_ACCOUNT_CREDIT_LOSS_RESULT = "141840"
+# Report 4 was materially redesigned at the same 2025 COSIF transition. Only
+# the 2025+ identifiers below are production-enabled. Pre-2025 DRE fields fail
+# closed to UNKNOWN until their historical identifiers are independently
+# verified from official payloads.
+_INCOME_ACCOUNTS_2025 = {
+    "net_income": "141870",
+    "credit_loss_result": "141840",
+    "intermediation_expected_loss_result": "141842",
+    "intermediation_result": "141851",
+    "payment_expected_loss_result": "141853",
+    "payment_transactions_result": "141855",
+    "bank_tariff_income": "141856",
+    "other_service_income": "141857",
+    "personnel_expense": "141858",
+    "administrative_expense": "141859",
+}
+_INTERMEDIATION_INCOME_ACCOUNTS_2025 = (
+    "141825",  # interbank liquidity income
+    "141830",  # securities income
+    "141835",  # credit-operation income
+    "141836",  # finance-lease income
+    "141837",  # other credit-like operation income
+)
+
 _ACCOUNT_BASEL_RATIO = "79664"
 _ACCOUNT_TIER1_RATIO = "79660"
 _ACCOUNT_CET1_RATIO = "79659"
@@ -329,6 +351,14 @@ def build_annual_bank_profile(
         if prior_identity is not None
         else None
     )
+    income_accounts = _income_accounts(current_identity.ano_mes)
+    first_half_income_accounts = (
+        _income_accounts(first_half_identity.ano_mes)
+        if first_half_identity is not None
+        else None
+    )
+    if income_accounts != first_half_income_accounts:
+        income_accounts = None
 
     total_assets = _account_value(
         current_summary_rows, current_summary_accounts["total_assets"]
@@ -359,27 +389,83 @@ def build_annual_bank_profile(
         else None
     )
 
-    first_half_net_income = _account_value(first_half_rows, _ACCOUNT_NET_INCOME)
-    second_half_net_income = _account_value(
-        second_half_rows, _ACCOUNT_NET_INCOME
-    )
-    annual_net_income = _sum_required_pair(
-        first_half_net_income, second_half_net_income
-    )
+    annual_values: dict[str, float | None] = {}
+    if income_accounts is not None:
+        for name, account in income_accounts.items():
+            annual_values[name] = _annual_account_value(
+                first_half_rows,
+                second_half_rows,
+                account,
+            )
+        annual_values["intermediation_income"] = _annual_account_sum(
+            first_half_rows,
+            second_half_rows,
+            _INTERMEDIATION_INCOME_ACCOUNTS_2025,
+        )
 
-    first_half_credit_loss = _account_value(
-        first_half_rows, _ACCOUNT_CREDIT_LOSS_RESULT
+    annual_net_income = annual_values.get("net_income")
+    annual_credit_loss_result = annual_values.get("credit_loss_result")
+    annual_intermediation_income = annual_values.get("intermediation_income")
+    annual_intermediation_result = annual_values.get("intermediation_result")
+    annual_intermediation_expected_loss = annual_values.get(
+        "intermediation_expected_loss_result"
     )
-    second_half_credit_loss = _account_value(
-        second_half_rows, _ACCOUNT_CREDIT_LOSS_RESULT
+    annual_payment_result = annual_values.get("payment_transactions_result")
+    annual_payment_expected_loss = annual_values.get(
+        "payment_expected_loss_result"
     )
-    annual_credit_loss_result = _sum_required_pair(
-        first_half_credit_loss, second_half_credit_loss
-    )
+    annual_bank_tariff_income = annual_values.get("bank_tariff_income")
+    annual_other_service_income = annual_values.get("other_service_income")
+    annual_personnel_expense = annual_values.get("personnel_expense")
+    annual_administrative_expense = annual_values.get("administrative_expense")
 
     average_equity = _average_positive(prior_equity, equity)
     average_assets = _average_positive(prior_total_assets, total_assets)
     average_credit = _average_positive(prior_gross_credit, gross_credit)
+
+    service_income = _sum_required_values(
+        annual_payment_result,
+        annual_bank_tariff_income,
+        annual_other_service_income,
+    )
+    payment_result_ex_provisions = _difference_required(
+        annual_payment_result,
+        annual_payment_expected_loss,
+    )
+    service_result_ex_provisions = _sum_required_values(
+        payment_result_ex_provisions,
+        annual_bank_tariff_income,
+        annual_other_service_income,
+    )
+    intermediation_result_ex_provisions = _difference_required(
+        annual_intermediation_result,
+        annual_intermediation_expected_loss,
+    )
+    operating_result_ex_provisions = _sum_required_values(
+        intermediation_result_ex_provisions,
+        service_result_ex_provisions,
+    )
+    total_administrative_expense = _sum_required_values(
+        annual_personnel_expense,
+        annual_administrative_expense,
+    )
+    efficiency_ratio = (
+        _ratio_positive_denominator(
+            -total_administrative_expense,
+            operating_result_ex_provisions,
+        )
+        if total_administrative_expense is not None
+        and total_administrative_expense <= 0
+        else None
+    )
+    fee_income_denominator = _sum_required_values(
+        service_income,
+        annual_intermediation_income,
+    )
+    fee_income_share = _ratio_positive_denominator(
+        service_income,
+        fee_income_denominator,
+    )
 
     basel_ratio = _account_value(current_capital_rows, _ACCOUNT_BASEL_RATIO)
     tier1_ratio = _account_value(current_capital_rows, _ACCOUNT_TIER1_RATIO)
@@ -406,6 +492,17 @@ def build_annual_bank_profile(
         prior_gross_credit_portfolio=prior_gross_credit,
         annual_net_income=annual_net_income,
         annual_credit_loss_result=annual_credit_loss_result,
+        annual_intermediation_income=annual_intermediation_income,
+        annual_intermediation_result=annual_intermediation_result,
+        annual_intermediation_expected_loss_result=(
+            annual_intermediation_expected_loss
+        ),
+        annual_payment_transactions_result=annual_payment_result,
+        annual_payment_expected_loss_result=annual_payment_expected_loss,
+        annual_bank_tariff_income=annual_bank_tariff_income,
+        annual_other_service_income=annual_other_service_income,
+        annual_personnel_expense=annual_personnel_expense,
+        annual_administrative_expense=annual_administrative_expense,
         basel_ratio=basel_ratio,
         tier1_ratio=tier1_ratio,
         core_equity_tier1_ratio=cet1_ratio,
@@ -418,6 +515,8 @@ def build_annual_bank_profile(
             else None
         ),
         equity_to_assets=_ratio(equity, total_assets),
+        efficiency_ratio=efficiency_ratio,
+        fee_income_share=fee_income_share,
         available_from_estimate=datetime(fiscal_year + 1, 4, 1, tzinfo=UTC),
         collected_at=_aware(collected_at),
         source_documents=(
@@ -444,6 +543,15 @@ def bank_contract_values(record: BankPrudentialAnnualRecord) -> dict[str, float]
         "prior_gross_credit_portfolio",
         "annual_net_income",
         "annual_credit_loss_result",
+        "annual_intermediation_income",
+        "annual_intermediation_result",
+        "annual_intermediation_expected_loss_result",
+        "annual_payment_transactions_result",
+        "annual_payment_expected_loss_result",
+        "annual_bank_tariff_income",
+        "annual_other_service_income",
+        "annual_personnel_expense",
+        "annual_administrative_expense",
         "basel_ratio",
         "tier1_ratio",
         "core_equity_tier1_ratio",
@@ -459,6 +567,12 @@ def bank_contract_values(record: BankPrudentialAnnualRecord) -> dict[str, float]
 
 def _summary_accounts(ano_mes: int) -> dict[str, str]:
     return _SUMMARY_ACCOUNTS_2025 if ano_mes >= 202501 else _SUMMARY_ACCOUNTS_PRE_2025
+
+
+def _income_accounts(ano_mes: int) -> dict[str, str] | None:
+    if ano_mes < 202501:
+        return None
+    return _INCOME_ACCOUNTS_2025
 
 
 def _rows(content: bytes) -> list[dict[str, Any]]:
@@ -490,10 +604,47 @@ def _account_value(rows: list[dict[str, Any]], account: str) -> float | None:
     return numeric[0]
 
 
+def _annual_account_value(
+    first_half_rows: list[dict[str, Any]],
+    second_half_rows: list[dict[str, Any]],
+    account: str,
+) -> float | None:
+    return _sum_required_pair(
+        _account_value(first_half_rows, account),
+        _account_value(second_half_rows, account),
+    )
+
+
+def _annual_account_sum(
+    first_half_rows: list[dict[str, Any]],
+    second_half_rows: list[dict[str, Any]],
+    accounts: tuple[str, ...],
+) -> float | None:
+    first_half = _sum_required_values(
+        *(_account_value(first_half_rows, account) for account in accounts)
+    )
+    second_half = _sum_required_values(
+        *(_account_value(second_half_rows, account) for account in accounts)
+    )
+    return _sum_required_pair(first_half, second_half)
+
+
 def _sum_required_pair(first: float | None, second: float | None) -> float | None:
     if first is None or second is None:
         return None
     return first + second
+
+
+def _sum_required_values(*values: float | None) -> float | None:
+    if any(value is None for value in values):
+        return None
+    return sum(float(value) for value in values if value is not None)
+
+
+def _difference_required(first: float | None, second: float | None) -> float | None:
+    if first is None or second is None:
+        return None
+    return first - second
 
 
 def _average_positive(first: float | None, second: float | None) -> float | None:
@@ -505,6 +656,15 @@ def _average_positive(first: float | None, second: float | None) -> float | None
 
 def _ratio(numerator: float | None, denominator: float | None) -> float | None:
     if numerator is None or denominator is None or denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _ratio_positive_denominator(
+    numerator: float | None,
+    denominator: float | None,
+) -> float | None:
+    if numerator is None or denominator is None or denominator <= 0:
         return None
     return numerator / denominator
 
