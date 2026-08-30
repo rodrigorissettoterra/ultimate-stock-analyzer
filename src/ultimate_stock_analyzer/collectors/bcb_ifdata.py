@@ -48,6 +48,16 @@ _SUMMARY_ACCOUNTS_2025 = {
 
 _ACCOUNT_NET_INCOME = "141870"
 _ACCOUNT_CREDIT_LOSS_RESULT = "141840"
+
+# Post-2025 COSIF report-4 accounts used by the BCB operational efficiency
+# methodology. These exact identifiers were verified against the official
+# 2025-12 prudential-conglomerate IFData payload for C0080099. Legacy periods
+# remain UNKNOWN until their exact historical account contract is proven.
+_ACCOUNT_ADMINISTRATIVE_EXPENSE_2025 = "141859"
+_ACCOUNT_RESULT_BEFORE_TAX_PARTICIPATIONS_2025 = "141867"
+_ACCOUNT_EXPECTED_LOSS_RESULT_2025 = "141842"
+_ACCOUNT_OTHER_EXPECTED_LOSS_RESULT_2025 = "141860"
+
 _ACCOUNT_BASEL_RATIO = "79664"
 _ACCOUNT_TIER1_RATIO = "79660"
 _ACCOUNT_CET1_RATIO = "79659"
@@ -360,9 +370,7 @@ def build_annual_bank_profile(
     )
 
     first_half_net_income = _account_value(first_half_rows, _ACCOUNT_NET_INCOME)
-    second_half_net_income = _account_value(
-        second_half_rows, _ACCOUNT_NET_INCOME
-    )
+    second_half_net_income = _account_value(second_half_rows, _ACCOUNT_NET_INCOME)
     annual_net_income = _sum_required_pair(
         first_half_net_income, second_half_net_income
     )
@@ -377,6 +385,49 @@ def build_annual_bank_profile(
         first_half_credit_loss, second_half_credit_loss
     )
 
+    annual_administrative_expense: float | None = None
+    annual_operating_result_ex_provisions: float | None = None
+    efficiency_ratio: float | None = None
+    if (
+        first_half_identity is not None
+        and first_half_identity.ano_mes >= 202501
+        and current_identity.ano_mes >= 202501
+    ):
+        signed_admin = _sum_required_pair(
+            _account_value(first_half_rows, _ACCOUNT_ADMINISTRATIVE_EXPENSE_2025),
+            _account_value(second_half_rows, _ACCOUNT_ADMINISTRATIVE_EXPENSE_2025),
+        )
+        annual_administrative_expense = _expense_amount(signed_admin)
+        annual_pre_tax_result = _sum_required_pair(
+            _account_value(
+                first_half_rows, _ACCOUNT_RESULT_BEFORE_TAX_PARTICIPATIONS_2025
+            ),
+            _account_value(
+                second_half_rows, _ACCOUNT_RESULT_BEFORE_TAX_PARTICIPATIONS_2025
+            ),
+        )
+        annual_expected_loss = _sum_required_pair(
+            _account_value(first_half_rows, _ACCOUNT_EXPECTED_LOSS_RESULT_2025),
+            _account_value(second_half_rows, _ACCOUNT_EXPECTED_LOSS_RESULT_2025),
+        )
+        annual_other_expected_loss = _sum_required_pair(
+            _account_value(
+                first_half_rows, _ACCOUNT_OTHER_EXPECTED_LOSS_RESULT_2025
+            ),
+            _account_value(
+                second_half_rows, _ACCOUNT_OTHER_EXPECTED_LOSS_RESULT_2025
+            ),
+        )
+        annual_operating_result_ex_provisions = _operating_result_ex_provisions(
+            annual_pre_tax_result,
+            annual_expected_loss,
+            annual_other_expected_loss,
+        )
+        efficiency_ratio = _ratio(
+            annual_administrative_expense,
+            annual_operating_result_ex_provisions,
+        )
+
     average_equity = _average_positive(prior_equity, equity)
     average_assets = _average_positive(prior_total_assets, total_assets)
     average_credit = _average_positive(prior_gross_credit, gross_credit)
@@ -384,9 +435,7 @@ def build_annual_bank_profile(
     basel_ratio = _account_value(current_capital_rows, _ACCOUNT_BASEL_RATIO)
     tier1_ratio = _account_value(current_capital_rows, _ACCOUNT_TIER1_RATIO)
     cet1_ratio = _account_value(current_capital_rows, _ACCOUNT_CET1_RATIO)
-    leverage_ratio = _account_value(
-        current_capital_rows, _ACCOUNT_LEVERAGE_RATIO
-    )
+    leverage_ratio = _account_value(current_capital_rows, _ACCOUNT_LEVERAGE_RATIO)
 
     return BankPrudentialAnnualRecord(
         company_id=issuer.company_id,
@@ -406,6 +455,8 @@ def build_annual_bank_profile(
         prior_gross_credit_portfolio=prior_gross_credit,
         annual_net_income=annual_net_income,
         annual_credit_loss_result=annual_credit_loss_result,
+        annual_administrative_expense=annual_administrative_expense,
+        annual_operating_result_ex_provisions=annual_operating_result_ex_provisions,
         basel_ratio=basel_ratio,
         tier1_ratio=tier1_ratio,
         core_equity_tier1_ratio=cet1_ratio,
@@ -418,6 +469,7 @@ def build_annual_bank_profile(
             else None
         ),
         equity_to_assets=_ratio(equity, total_assets),
+        efficiency_ratio=efficiency_ratio,
         available_from_estimate=datetime(fiscal_year + 1, 4, 1, tzinfo=UTC),
         collected_at=_aware(collected_at),
         source_documents=(
@@ -470,9 +522,7 @@ def _rows(content: bytes) -> list[dict[str, Any]]:
 
 def _institution_rows(content: bytes, cod_inst: str) -> list[dict[str, Any]]:
     return [
-        row
-        for row in _rows(content)
-        if _text(row.get("CodInst")) == cod_inst
+        row for row in _rows(content) if _text(row.get("CodInst")) == cod_inst
     ]
 
 
@@ -494,6 +544,27 @@ def _sum_required_pair(first: float | None, second: float | None) -> float | Non
     if first is None or second is None:
         return None
     return first + second
+
+
+def _expense_amount(value: float | None) -> float | None:
+    if value is None or value > 0:
+        return None
+    return -value
+
+
+def _operating_result_ex_provisions(
+    reported_result: float | None,
+    expected_loss_result: float | None,
+    other_expected_loss_result: float | None,
+) -> float | None:
+    if (
+        reported_result is None
+        or expected_loss_result is None
+        or other_expected_loss_result is None
+    ):
+        return None
+    result = reported_result - expected_loss_result - other_expected_loss_result
+    return result if result > 0 else None
 
 
 def _average_positive(first: float | None, second: float | None) -> float | None:

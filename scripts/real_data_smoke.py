@@ -159,6 +159,7 @@ def _itub_bank_profile(
         "basel_ratio": profile.basel_ratio,
         "tier1_ratio": profile.tier1_ratio,
         "equity_to_assets": profile.equity_to_assets,
+        "efficiency_ratio": profile.efficiency_ratio,
     }
     missing = sorted(name for name, value in required_metrics.items() if value is None)
     if missing:
@@ -171,6 +172,10 @@ def _itub_bank_profile(
             "prior_gross_credit_portfolio": profile.prior_gross_credit_portfolio,
             "annual_net_income": profile.annual_net_income,
             "annual_credit_loss_result": profile.annual_credit_loss_result,
+            "annual_administrative_expense": profile.annual_administrative_expense,
+            "annual_operating_result_ex_provisions": (
+                profile.annual_operating_result_ex_provisions
+            ),
         }
         raise RuntimeError(
             "ITUB4 IFData profile is missing verified bank metrics: "
@@ -187,6 +192,10 @@ def _itub_bank_profile(
         "institution_type": profile.institution_type,
         "available_from_estimate": profile.available_from_estimate,
         "point_in_time_eligible": profile.point_in_time_eligible,
+        "annual_administrative_expense": profile.annual_administrative_expense,
+        "annual_operating_result_ex_provisions": (
+            profile.annual_operating_result_ex_provisions
+        ),
         **required_metrics,
     }
 
