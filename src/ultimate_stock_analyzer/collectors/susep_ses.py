@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import PurePosixPath
@@ -95,13 +96,42 @@ class SusepSesCollector:
     """Download and inspect official SES evidence without inferring semantics."""
 
     user_agent: str = "ultimate-stock-analyzer/0.2"
-    timeout_seconds: float = 120.0
+    timeout_seconds: float = 180.0
+    connect_timeout_seconds: float = 30.0
+    retry_attempts: int = 3
+    retry_backoff_seconds: float = 2.0
 
     def _download(self, url: str) -> bytes:
-        with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
-            response = client.get(url, headers={"User-Agent": self.user_agent})
-            response.raise_for_status()
-        return response.content
+        if self.retry_attempts < 1:
+            raise ValueError("retry_attempts must be at least 1")
+        if self.retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be non-negative")
+
+        timeout = httpx.Timeout(
+            self.timeout_seconds,
+            connect=self.connect_timeout_seconds,
+        )
+        last_request_error: httpx.RequestError | None = None
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            for attempt in range(1, self.retry_attempts + 1):
+                try:
+                    response = client.get(url, headers={"User-Agent": self.user_agent})
+                except httpx.RequestError as exc:
+                    last_request_error = exc
+                    if attempt == self.retry_attempts:
+                        raise
+                else:
+                    retryable_status = response.status_code == 429 or response.status_code >= 500
+                    if not retryable_status or attempt == self.retry_attempts:
+                        response.raise_for_status()
+                        return response.content
+
+                if self.retry_backoff_seconds > 0:
+                    time.sleep(self.retry_backoff_seconds * (2 ** (attempt - 1)))
+
+        if last_request_error is not None:
+            raise last_request_error
+        raise RuntimeError("SUSEP download exhausted retries without a response")
 
     def download_archive_bytes(self) -> bytes:
         return self._download(SUSEP_SES_DOWNLOAD_URL)
