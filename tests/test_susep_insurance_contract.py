@@ -7,6 +7,7 @@ import pytest
 from ultimate_stock_analyzer.collectors.susep_ses import (
     CANDIDATE_SOURCE_TABLES,
     SUSEP_SES_DOWNLOAD_URL,
+    SUSEP_SES_TABLE_DOCUMENTATION_URL,
     SusepSesCollector,
     source_contract,
 )
@@ -32,6 +33,7 @@ def test_susep_source_contract_is_official_fail_closed_and_non_pit() -> None:
     assert contract.licensed_entity_registry_required is True
     assert contract.fuzzy_identity_matching_allowed is False
     assert contract.download_url == SUSEP_SES_DOWNLOAD_URL
+    assert contract.table_documentation_url == SUSEP_SES_TABLE_DOCUMENTATION_URL
     assert "Ses_cias.csv" in CANDIDATE_SOURCE_TABLES
 
 
@@ -94,6 +96,42 @@ def test_candidate_schema_manifest_records_presence_without_promoting_semantics(
         "archive_path": None,
         "columns": [],
     }
+
+
+def test_documentation_manifest_extracts_only_bounded_exact_field_evidence() -> None:
+    documentation = (
+        r"{\rtf1\ansi "
+        r"Ses_seguros.csv\par "
+        r"damesano Ano e m\'eas da informa\'e7\'e3o\par "
+        r"premio_ganho Pr\'eamio Ganho (R$)\par "
+        r"sinistro_ocorrido Sinistros Ocorridos (R$)\par "
+        r"desp_com Despesa Comercial (R$)\par "
+        r"}"
+    ).encode("latin1")
+    manifest = SusepSesCollector().documentation_field_manifest(
+        documentation,
+        fields=("damesano", "premio_ganho", "sinistro_ocorrido", "missing_field"),
+        context_chars=80,
+    )
+
+    assert manifest["source"] == "SUSEP_SES_TABLE_DOCUMENTATION"
+    assert manifest["source_url"] == SUSEP_SES_TABLE_DOCUMENTATION_URL
+    fields = manifest["fields"]
+    assert isinstance(fields, dict)
+    assert fields["damesano"]["present"] is True
+    assert fields["premio_ganho"]["present"] is True
+    assert fields["sinistro_ocorrido"]["present"] is True
+    assert fields["missing_field"] == {
+        "present": False,
+        "occurrences": 0,
+        "snippets": [],
+    }
+    assert "Prêmio Ganho" in fields["premio_ganho"]["snippets"][0]
+
+
+def test_documentation_manifest_rejects_unbounded_context() -> None:
+    with pytest.raises(ValueError, match="at least 40"):
+        SusepSesCollector().documentation_field_manifest(b"{\\rtf1 test}", context_chars=20)
 
 
 def test_insurance_record_keeps_unverified_scoring_metrics_unknown() -> None:
