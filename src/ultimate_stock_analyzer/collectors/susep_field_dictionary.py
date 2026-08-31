@@ -105,4 +105,7 @@ def _normalize_text(value: object) -> str:
     if value is None or pd.isna(value):
         return ""
     text = unicodedata.normalize("NFKD", str(value))
-    return "".join(character for character in text if not unicodedata.combining(character)).upper().strip()
+    characters = (
+        character for character in text if not unicodedata.combining(character)
+    )
+    return "".join(characters).upper().strip()
