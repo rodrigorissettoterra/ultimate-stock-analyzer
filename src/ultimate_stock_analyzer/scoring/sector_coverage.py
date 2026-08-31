@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
@@ -24,6 +24,7 @@ class SectorCoverageReport:
     specialized_coverage: float
     fallback_by_sector: dict[str, int]
     fallback_by_subsector: dict[str, int]
+    fallback_issuer_samples_by_subsector: dict[str, tuple[str, ...]]
     ambiguous_specialized_matches: int
     outside_active_company_catalog_issuer_codes: tuple[str, ...]
     verified_non_equity_issuer_codes: tuple[str, ...]
@@ -54,6 +55,7 @@ def profile_sector_model_coverage(
     outside_active_company_catalog_issuer_codes: Iterable[str] = (),
     verified_non_equity_issuer_codes: Iterable[str] = (),
     sample_limit: int = 50,
+    fallback_sample_limit: int = 5,
 ) -> SectorCoverageReport:
     records = list(classifications)
     outside_catalog = _normalized_codes(outside_active_company_catalog_issuer_codes)
@@ -71,10 +73,13 @@ def profile_sector_model_coverage(
         raise ValueError("outside-catalog issuer count exceeds classification row count")
     if sample_limit < 0:
         raise ValueError("sample_limit must be non-negative")
+    if fallback_sample_limit < 0:
+        raise ValueError("fallback_sample_limit must be non-negative")
 
     model_counts: Counter[str] = Counter()
     fallback_by_sector: Counter[str] = Counter()
     fallback_by_subsector: Counter[str] = Counter()
+    fallback_issuer_codes: defaultdict[str, set[str]] = defaultdict(set)
     ambiguous: list[str] = []
     for record in records:
         row = {
@@ -86,8 +91,12 @@ def profile_sector_model_coverage(
         selection = registry.select(row)
         model_counts[selection.model_id] += 1
         if selection.model_id == registry.default_model.model_id:
+            fallback_key = f"{record.sector} / {record.subsector}"
             fallback_by_sector[record.sector] += 1
-            fallback_by_subsector[f"{record.sector} / {record.subsector}"] += 1
+            fallback_by_subsector[fallback_key] += 1
+            issuer_code = str(record.issuer_code or "").strip().upper()
+            if issuer_code:
+                fallback_issuer_codes[fallback_key].add(issuer_code)
         matches = [
             model.model_id
             for model in registry.models
@@ -100,6 +109,10 @@ def profile_sector_model_coverage(
     equity_candidate_rows = classification_rows - len(verified_exclusions)
     fallback = model_counts.get(registry.default_model.model_id, 0)
     specialized = len(records) - fallback
+    fallback_samples = {
+        key: tuple(sorted(codes))[:fallback_sample_limit]
+        for key, codes in sorted(fallback_issuer_codes.items())
+    }
     return SectorCoverageReport(
         classification_rows=classification_rows,
         company_catalog_mapped_rows=mapped_rows,
@@ -119,6 +132,7 @@ def profile_sector_model_coverage(
         specialized_coverage=(specialized / len(records) if records else 0.0),
         fallback_by_sector=dict(sorted(fallback_by_sector.items())),
         fallback_by_subsector=dict(sorted(fallback_by_subsector.items())),
+        fallback_issuer_samples_by_subsector=fallback_samples,
         ambiguous_specialized_matches=len(ambiguous),
         outside_active_company_catalog_issuer_codes=outside_catalog[:sample_limit],
         verified_non_equity_issuer_codes=verified_exclusions[:sample_limit],
