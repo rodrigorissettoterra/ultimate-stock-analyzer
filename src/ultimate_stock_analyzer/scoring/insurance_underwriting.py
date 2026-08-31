@@ -10,6 +10,7 @@ _REQUIRED_COLUMNS = (
     "coenti",
     "premio_ganho",
     "sinistro_ocorrido",
+    "desp_com",
 )
 _CURRENT_SINISTRALIDADE_ERA_START = 201312
 
@@ -19,33 +20,36 @@ class InsuranceUnderwritingMetrics:
     """Verified current-era SUSEP underwriting evidence for one supervised insurer.
 
     SUSEP states that, from December 2013, earned premium is gross of reinsurance and
-    sinistralidade is measured using incurred claims. Current SES downloads are not
-    revision-aware, so derived values remain ineligible for strict PIT backtests.
+    sinistralidade is measured using incurred claims. SUSEP also publishes the
+    commercial-expense index as commercial expenses divided by earned premium.
+    Current SES downloads are not revision-aware, so derived values remain ineligible
+    for strict PIT backtests.
     """
 
     susep_company_code: str
     fiscal_year: int
     annual_earned_premiums: float | None
     annual_incurred_claims: float | None
+    annual_commercial_expenses: float | None
     loss_ratio: float | None
+    commercial_expense_ratio: float | None
     complete_months: bool
     point_in_time_eligible: bool = False
     source: str = "SUSEP_SES_DERIVED"
 
 
-def derive_susep_loss_ratio(
+def derive_susep_underwriting_metrics(
     table: pd.DataFrame,
     *,
     susep_company_code: str,
     fiscal_year: int,
 ) -> InsuranceUnderwritingMetrics:
-    """Derive annual insurer loss ratio from exact official SES columns.
+    """Derive verified annual insurer underwriting ratios from exact SES columns.
 
-    The current contract intentionally starts in FY2014 so a fiscal year never mixes
-    the pre-December-2013 and current SUSEP definitions. A valid annual observation
-    requires all twelve monthly periods for the exact SUSEP company identifier and
-    complete numeric ``premio_ganho`` / ``sinistro_ocorrido`` values. Missing or
-    invalid evidence fails closed to ``None``.
+    The contract starts in FY2014 so a fiscal year never mixes the pre-December-2013
+    and current SUSEP definitions. A valid annual observation requires all twelve
+    monthly periods for the exact SUSEP company identifier and complete numeric source
+    values. Missing or invalid evidence fails closed to ``None``.
     """
 
     _require_columns(table)
@@ -70,19 +74,37 @@ def derive_susep_loss_ratio(
 
     earned = pd.to_numeric(selected["premio_ganho"], errors="coerce")
     claims = pd.to_numeric(selected["sinistro_ocorrido"], errors="coerce")
-    if earned.isna().any() or claims.isna().any():
+    commercial_expenses = pd.to_numeric(selected["desp_com"], errors="coerce")
+    if earned.isna().any() or claims.isna().any() or commercial_expenses.isna().any():
         return _unknown(susep_company_code, fiscal_year, complete_months=True)
 
     annual_earned = float(earned.sum())
     annual_claims = float(claims.sum())
-    ratio = _strict_loss_ratio(annual_claims, annual_earned)
+    annual_commercial = float(commercial_expenses.sum())
     return InsuranceUnderwritingMetrics(
         susep_company_code=susep_company_code,
         fiscal_year=fiscal_year,
         annual_earned_premiums=annual_earned if isfinite(annual_earned) else None,
         annual_incurred_claims=annual_claims if isfinite(annual_claims) else None,
-        loss_ratio=ratio,
+        annual_commercial_expenses=annual_commercial if isfinite(annual_commercial) else None,
+        loss_ratio=_strict_ratio(annual_claims, annual_earned),
+        commercial_expense_ratio=_strict_ratio(annual_commercial, annual_earned),
         complete_months=True,
+    )
+
+
+def derive_susep_loss_ratio(
+    table: pd.DataFrame,
+    *,
+    susep_company_code: str,
+    fiscal_year: int,
+) -> InsuranceUnderwritingMetrics:
+    """Backward-compatible entry point for verified underwriting metrics."""
+
+    return derive_susep_underwriting_metrics(
+        table,
+        susep_company_code=susep_company_code,
+        fiscal_year=fiscal_year,
     )
 
 
@@ -92,9 +114,14 @@ def insurance_underwriting_features(
     susep_company_code: str,
     fiscal_year: int,
 ) -> dict[str, float | None]:
-    """Return scoring-compatible verified insurer underwriting features."""
+    """Return scoring-compatible verified insurer underwriting features.
 
-    metrics = derive_susep_loss_ratio(
+    ``commercial_expense_ratio`` is deliberately not mapped to the model's generic
+    ``expense_ratio`` yet: SUSEP's combined ratio also includes administrative
+    expenses, whose exact SES field contract still needs independent verification.
+    """
+
+    metrics = derive_susep_underwriting_metrics(
         table,
         susep_company_code=susep_company_code,
         fiscal_year=fiscal_year,
@@ -115,12 +142,12 @@ def _numeric_company_code(value: str) -> int:
     return int(stripped)
 
 
-def _strict_loss_ratio(claims: float, earned_premiums: float) -> float | None:
-    if not isfinite(claims) or not isfinite(earned_premiums):
+def _strict_ratio(numerator: float, earned_premiums: float) -> float | None:
+    if not isfinite(numerator) or not isfinite(earned_premiums):
         return None
-    if claims < 0.0 or earned_premiums <= 0.0:
+    if numerator < 0.0 or earned_premiums <= 0.0:
         return None
-    result = claims / earned_premiums
+    result = numerator / earned_premiums
     return result if isfinite(result) else None
 
 
@@ -135,6 +162,8 @@ def _unknown(
         fiscal_year=fiscal_year,
         annual_earned_premiums=None,
         annual_incurred_claims=None,
+        annual_commercial_expenses=None,
         loss_ratio=None,
+        commercial_expense_ratio=None,
         complete_months=complete_months,
     )
