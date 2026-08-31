@@ -12,9 +12,6 @@ from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
     SusepAccountingODataService,
 )
 
-_SMOKE_YEAR = 2025
-_SMOKE_RESOURCES = ("ContabeisDRE", "ContabeisAtivo")
-
 
 def run(output: Path) -> dict[str, object]:
     service = SusepAccountingODataService()
@@ -27,23 +24,24 @@ def run(output: Path) -> dict[str, object]:
             + ", ".join(missing)
         )
 
-    query_checks: list[dict[str, object]] = []
-    for resource in _SMOKE_RESOURCES:
-        rows = service.fetch_year_rows(resource, year=_SMOKE_YEAR, top=1)
-        if not rows:
-            raise RuntimeError(f"official SUSEP accounting resource returned no rows: {resource}")
-        sample = rows[0]
-        query_checks.append(
-            {
-                "resource": resource,
-                "year": _SMOKE_YEAR,
-                "row_count_requested": 1,
-                "row_count_returned": len(rows),
-                "sample_cmpid": sample.cmpid,
-                "sample_cmp_title": sample.cmp_title,
-                "parsed_cnpj_length": len(sample.cnpj),
-            }
-        )
+    callables = service.fetch_callable_catalog()
+    callable_manifest = [
+        {
+            "kind": item.kind,
+            "name": item.name,
+            "target": item.target,
+            "parameters": [
+                {
+                    "name": parameter.name,
+                    "type": parameter.type_name,
+                    "nullable": parameter.nullable,
+                }
+                for parameter in item.parameters
+            ],
+            "return_type": item.return_type,
+        }
+        for item in callables
+    ]
 
     manifest: dict[str, object] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -57,7 +55,7 @@ def run(output: Path) -> dict[str, object]:
         ],
         "verified_canonical_resources": list(VERIFIED_ACCOUNTING_RESOURCES),
         "verified_canonical_resources_present": True,
-        "live_year_query_checks": query_checks,
+        "metadata_callables": callable_manifest,
         "documented_row_fields": [
             "entnome",
             "cnpj",
@@ -69,6 +67,7 @@ def run(output: Path) -> dict[str, object]:
         ],
         "raw_financial_rows_persisted": False,
         "semantic_promotion": False,
+        "live_query_shape_promoted": False,
         "point_in_time_eligible": False,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -78,7 +77,7 @@ def run(output: Path) -> dict[str, object]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Inspect the official SUSEP accounting OData service without storing financial rows."
+        description="Inspect official SUSEP accounting OData metadata without storing financial rows."
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
