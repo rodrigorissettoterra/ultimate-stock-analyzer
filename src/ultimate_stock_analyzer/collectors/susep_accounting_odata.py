@@ -29,6 +29,14 @@ VERIFIED_ACCOUNTING_RESOURCES = (
 
 
 @dataclass(frozen=True, slots=True)
+class SusepAccountingResource:
+    """One exact entity-set entry from the official OData service document."""
+
+    name: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
 class SusepAccountingRow:
     """One official SUSEP accounting observation from the Olinda API."""
 
@@ -52,8 +60,8 @@ class SusepAccountingODataService:
     backoff_seconds: float = 2.0
     user_agent: str = "ultimate-stock-analyzer/0.2"
 
-    def fetch_resource_names(self) -> tuple[str, ...]:
-        """Return exact entity-set names exposed by the OData service document."""
+    def fetch_resource_catalog(self) -> tuple[SusepAccountingResource, ...]:
+        """Return exact resource names and URLs from the OData service document."""
 
         payload = self._get_json(self.service_root, params={"$format": "json"})
         if not isinstance(payload, dict):
@@ -62,7 +70,7 @@ class SusepAccountingODataService:
         if not isinstance(rows, list):
             raise TypeError("unexpected SUSEP accounting OData service-document shape")
 
-        names: set[str] = set()
+        resources: dict[str, SusepAccountingResource] = {}
         for row in rows:
             if not isinstance(row, dict):
                 raise TypeError("unexpected SUSEP accounting OData resource entry shape")
@@ -72,10 +80,23 @@ class SusepAccountingODataService:
                 raise TypeError("SUSEP accounting OData resource has invalid name")
             if not isinstance(url, str) or not url.strip():
                 raise TypeError("SUSEP accounting OData resource has invalid URL")
-            names.add(name.strip())
-        if not names:
+            normalized_name = name.strip()
+            normalized_url = url.strip()
+            existing = resources.get(normalized_name)
+            if existing is not None and existing.url != normalized_url:
+                raise ValueError("SUSEP accounting OData resource name has conflicting URLs")
+            resources[normalized_name] = SusepAccountingResource(
+                name=normalized_name,
+                url=normalized_url,
+            )
+        if not resources:
             raise ValueError("SUSEP accounting OData service exposed no resources")
-        return tuple(sorted(names))
+        return tuple(resources[name] for name in sorted(resources))
+
+    def fetch_resource_names(self) -> tuple[str, ...]:
+        """Return exact entity-set names exposed by the OData service document."""
+
+        return tuple(resource.name for resource in self.fetch_resource_catalog())
 
     def verified_resources_present(self) -> bool:
         """Return whether every empirically verified canonical resource is exposed."""
