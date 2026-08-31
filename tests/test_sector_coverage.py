@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from ultimate_stock_analyzer.domain.master import SectorClassificationRecord
 from ultimate_stock_analyzer.scoring.sector_coverage import profile_sector_model_coverage
 from ultimate_stock_analyzer.scoring.sector_models import (
@@ -8,12 +10,19 @@ from ultimate_stock_analyzer.scoring.sector_models import (
 )
 
 
-def _record(company_id: str, *, sector: str, subsector: str, segment: str) -> SectorClassificationRecord:
+def _record(
+    company_id: str,
+    issuer_code: str,
+    *,
+    sector: str,
+    subsector: str,
+    segment: str,
+) -> SectorClassificationRecord:
     return SectorClassificationRecord(
         company_id=company_id,
         cvm_code=company_id.split(":", 1)[1],
         cnpj="33000167000101",
-        issuer_code=company_id[-4:].upper(),
+        issuer_code=issuer_code,
         trading_name=company_id,
         sector=sector,
         subsector=subsector,
@@ -46,48 +55,82 @@ def _registry() -> SectorModelRegistry:
     )
 
 
-def test_sector_coverage_profiles_identity_and_model_assignment() -> None:
+def test_sector_coverage_profiles_active_catalog_and_model_assignment() -> None:
     report = profile_sector_model_coverage(
         [
-            _record("cvm:1", sector="Financeiro", subsector="Intermediários Financeiros", segment="Bancos"),
-            _record("cvm:2", sector="Utilidade Pública", subsector="Energia Elétrica", segment="Energia Elétrica"),
-            _record("cvm:3", sector="Consumo", subsector="Comércio", segment="Varejo"),
+            _record(
+                "cvm:1",
+                "BANK",
+                sector="Financeiro",
+                subsector="Intermediários Financeiros",
+                segment="Bancos",
+            ),
+            _record(
+                "cvm:2",
+                "UTIL",
+                sector="Utilidade Pública",
+                subsector="Energia Elétrica",
+                segment="Energia Elétrica",
+            ),
+            _record(
+                "cvm:3",
+                "RETL",
+                sector="Consumo",
+                subsector="Comércio",
+                segment="Varejo",
+            ),
         ],
         registry=_registry(),
-        classification_rows=4,
-        unmapped_issuer_codes=("ABCD",),
+        classification_issuer_codes=("BANK", "UTIL", "RETL", "CRI1"),
+        active_catalog_issuer_codes=("BANK", "UTIL", "RETL", "NEWC"),
     )
 
-    assert report.identity_coverage == 0.75
+    assert report.classification_rows == 4
+    assert report.active_catalog_issuers == 4
+    assert report.classified_active_catalog_issuers == 3
+    assert report.active_catalog_unclassified_issuers == 1
+    assert report.active_catalog_classification_coverage == 0.75
+    assert report.classification_rows_outside_active_catalog == 1
+    assert report.outside_active_catalog_issuer_codes == ("CRI1",)
+    assert report.unclassified_active_catalog_issuer_codes == ("NEWC",)
     assert report.normalized_companies == 3
     assert report.model_counts == {"banks": 1, "general_corporate": 1, "utilities": 1}
     assert report.specialized_companies == 2
     assert report.fallback_companies == 1
     assert report.specialized_coverage == 2 / 3
-    assert report.unmapped_issuer_codes == ("ABCD",)
 
 
 def test_sector_coverage_reports_overlapping_specialized_rules() -> None:
     report = profile_sector_model_coverage(
         [
-            _record("cvm:2", sector="Utilidade Pública", subsector="Energia Elétrica", segment="Energia Elétrica"),
+            _record(
+                "cvm:2",
+                "UTIL",
+                sector="Utilidade Pública",
+                subsector="Energia Elétrica",
+                segment="Energia Elétrica",
+            ),
         ],
         registry=_registry(),
-        classification_rows=1,
+        classification_issuer_codes=("UTIL",),
+        active_catalog_issuer_codes=("UTIL",),
     )
-    # One model may match more than one field without being ambiguous across models.
     assert report.ambiguous_specialized_matches == 0
 
 
-def test_sector_coverage_fails_on_impossible_denominator() -> None:
-    try:
+def test_sector_coverage_rejects_normalized_code_outside_exact_intersection() -> None:
+    with pytest.raises(ValueError, match="outside the exact"):
         profile_sector_model_coverage(
-            [],
+            [
+                _record(
+                    "cvm:1",
+                    "BANK",
+                    sector="Financeiro",
+                    subsector="Intermediários Financeiros",
+                    segment="Bancos",
+                )
+            ],
             registry=_registry(),
-            classification_rows=0,
-            unmapped_issuer_codes=("ABCD",),
+            classification_issuer_codes=("BANK",),
+            active_catalog_issuer_codes=("OTHER",),
         )
-    except ValueError as exc:
-        assert "exceeds" in str(exc)
-    else:
-        raise AssertionError("expected ValueError")
