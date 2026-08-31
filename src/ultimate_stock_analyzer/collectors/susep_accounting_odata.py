@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -34,6 +35,26 @@ class SusepAccountingResource:
 
     name: str
     url: str
+
+
+@dataclass(frozen=True, slots=True)
+class SusepODataParameter:
+    """One exact parameter declared in the official OData metadata."""
+
+    name: str
+    type_name: str
+    nullable: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SusepODataCallable:
+    """Sanitized Function/FunctionImport signature from the OData metadata."""
+
+    kind: str
+    name: str
+    target: str | None
+    parameters: tuple[SusepODataParameter, ...] = ()
+    return_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,49 +125,63 @@ class SusepAccountingODataService:
         names = set(self.fetch_resource_names())
         return set(VERIFIED_ACCOUNTING_RESOURCES).issubset(names)
 
-    def fetch_year_rows(
-        self,
-        resource: str,
-        *,
-        year: int,
-        top: int | None = None,
-    ) -> tuple[SusepAccountingRow, ...]:
-        """Fetch one documented year-scoped accounting resource.
+    def fetch_callable_catalog(self) -> tuple[SusepODataCallable, ...]:
+        """Read Function/FunctionImport signatures from official `$metadata` only."""
 
-        SUSEP documents `Ano` as the required resource parameter. Olinda parameterized
-        resources use the OData function form `Resource(Ano=@Ano)` with the alias
-        supplied as `@Ano='YYYY'`. Optional `$top` is used only to bound smoke queries;
-        production callers must explicitly decide whether complete pagination is needed.
-        """
+        xml_text = self._get_text(f"{self.service_root}/$metadata", params={})
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise ValueError("invalid SUSEP accounting OData metadata XML") from exc
 
-        if resource not in VERIFIED_ACCOUNTING_RESOURCES:
-            raise ValueError("unverified SUSEP accounting resource")
-        if year < 1999 or year > 2100:
-            raise ValueError("year is outside supported SUSEP accounting range")
-        if top is not None and top < 1:
-            raise ValueError("top must be positive")
+        functions: dict[str, SusepODataCallable] = {}
+        imports: dict[str, SusepODataCallable] = {}
+        for element in root.iter():
+            tag = _local_name(element.tag)
+            if tag == "Function":
+                name = _required_xml_attr(element, "Name", "function")
+                parameters = tuple(
+                    SusepODataParameter(
+                        name=_required_xml_attr(child, "Name", "parameter"),
+                        type_name=_required_xml_attr(child, "Type", "parameter"),
+                        nullable=child.attrib.get("Nullable"),
+                    )
+                    for child in element
+                    if _local_name(child.tag) == "Parameter"
+                )
+                return_type = next(
+                    (
+                        child.attrib.get("Type")
+                        for child in element
+                        if _local_name(child.tag) == "ReturnType"
+                    ),
+                    None,
+                )
+                functions[name] = SusepODataCallable(
+                    kind="Function",
+                    name=name,
+                    target=None,
+                    parameters=parameters,
+                    return_type=return_type,
+                )
+            elif tag == "FunctionImport":
+                name = _required_xml_attr(element, "Name", "function import")
+                target = element.attrib.get("Function")
+                imports[name] = SusepODataCallable(
+                    kind="FunctionImport",
+                    name=name,
+                    target=target,
+                )
 
-        url = f"{self.service_root}/{resource}(Ano=@Ano)"
-        params: dict[str, Any] = {
-            "@Ano": f"'{year}'",
-            "$format": "json",
-        }
-        if top is not None:
-            params["$top"] = top
-
-        payload = self._get_json(url, params=params)
-        rows = self._response_rows(payload)
-        return tuple(self.parse_accounting_row(row) for row in rows)
-
-    def _response_rows(self, payload: Any) -> list[dict[str, Any]]:
-        if not isinstance(payload, dict):
-            raise TypeError("unexpected SUSEP accounting OData response shape")
-        rows = payload.get("value")
-        if not isinstance(rows, list):
-            raise TypeError("unexpected SUSEP accounting OData response shape")
-        if not all(isinstance(row, dict) for row in rows):
-            raise TypeError("unexpected SUSEP accounting OData row shape")
-        return rows
+        catalog = tuple(
+            sorted(
+                (*functions.values(), *imports.values()),
+                key=lambda item: (item.kind, item.name),
+            )
+        )
+        if not catalog:
+            raise ValueError("SUSEP accounting OData metadata exposed no callables")
+        return catalog
 
     def parse_accounting_row(self, row: dict[str, Any]) -> SusepAccountingRow:
         """Parse documented accounting fields without inferring financial semantics."""
@@ -165,20 +200,26 @@ class SusepAccountingODataService:
         if not isinstance(cmp_title, str) or not cmp_title.strip():
             raise ValueError("SUSEP accounting row has invalid CMP title")
 
-        normalized_cnpj = normalize_cnpj(cnpj)
-        parsed_month = _parse_reference_month(reference_month)
-        parsed_cmpid = _parse_cmpid(cmpid)
-        parsed_value = _parse_decimal(value)
         return SusepAccountingRow(
-            cnpj=normalized_cnpj,
+            cnpj=normalize_cnpj(cnpj),
             legal_name=legal_name.strip(),
-            reference_month=parsed_month,
-            cmpid=parsed_cmpid,
+            reference_month=_parse_reference_month(reference_month),
+            cmpid=_parse_cmpid(cmpid),
             cmp_title=cmp_title.strip(),
-            value=parsed_value,
+            value=_parse_decimal(value),
         )
 
     def _get_json(self, url: str, *, params: dict[str, Any]) -> Any:
+        response = self._request(url, params=params)
+        return response.json()
+
+    def _get_text(self, url: str, *, params: dict[str, Any]) -> str:
+        response = self._request(url, params=params)
+        if not response.text.strip():
+            raise ValueError("SUSEP accounting OData returned empty text response")
+        return response.text
+
+    def _request(self, url: str, *, params: dict[str, Any]) -> httpx.Response:
         if self.attempts < 1:
             raise ValueError("attempts must be positive")
         if self.timeout_seconds <= 0:
@@ -197,7 +238,7 @@ class SusepAccountingODataService:
                 try:
                     response = client.get(url, params=params)
                     response.raise_for_status()
-                    return response.json()
+                    return response
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
                     if status != 429 and status < 500:
@@ -212,6 +253,17 @@ class SusepAccountingODataService:
         if last_error is None:
             raise RuntimeError("SUSEP accounting OData request failed without an error")
         raise last_error
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _required_xml_attr(element: ET.Element, name: str, context: str) -> str:
+    value = element.attrib.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"SUSEP accounting OData {context} has invalid {name}")
+    return value.strip()
 
 
 def _parse_reference_month(value: Any) -> date:
