@@ -16,7 +16,6 @@ def _table(*, net_income: float = 20.0) -> pd.DataFrame:
         {"coenti": 12345, "damesano": 202412, "cmpid": 1039, "valor": 400.0},
         {"coenti": 99999, "damesano": 202512, "cmpid": 518, "valor": 999.0},
     ]
-    # Strict six-observation history for the five-year endpoint contract.
     historical_income = {2020: 10.0, 2021: 11.0, 2022: 12.0, 2023: 14.0, 2024: 16.0}
     rows.extend(
         {"coenti": 12345, "damesano": year * 100 + 12, "cmpid": 518, "valor": value}
@@ -129,7 +128,12 @@ def test_missing_prior_assets_only_blocks_roa() -> None:
 
 def test_nonpositive_average_denominator_fails_closed() -> None:
     table = _table()
-    table.loc[table["cmpid"] == 3333, "valor"] = [-120.0, 80.0]
+    table.loc[
+        (table["damesano"] == 202512) & (table["cmpid"] == 3333), "valor"
+    ] = -120.0
+    table.loc[
+        (table["damesano"] == 202412) & (table["cmpid"] == 3333), "valor"
+    ] = 80.0
 
     metrics = derive_susep_profitability_metrics(
         table, susep_company_code="12345", fiscal_year=2025
