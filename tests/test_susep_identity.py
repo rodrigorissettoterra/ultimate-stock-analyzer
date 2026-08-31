@@ -2,6 +2,7 @@ import pytest
 
 from ultimate_stock_analyzer.collectors.susep_identity import (
     SusepLicensedEntityRecord,
+    SusepOlindaIdentityCollector,
     match_susep_entities_by_cnpj,
     matched_susep_fip_codes,
     normalize_cnpj,
@@ -10,11 +11,7 @@ from ultimate_stock_analyzer.collectors.susep_identity import (
 
 
 def _record(*, cnpj: str, fip_code: str, name: str = "SEGURADORA TESTE S.A."):
-    return SusepLicensedEntityRecord(
-        legal_name=name,
-        cnpj=cnpj,
-        fip_code=fip_code,
-    )
+    return SusepLicensedEntityRecord(legal_name=name, cnpj=cnpj, fip_code=fip_code)
 
 
 def test_cnpj_normalization_accepts_official_formatting() -> None:
@@ -32,9 +29,7 @@ def test_exact_cnpj_match_ignores_names_and_nonmatching_entities() -> None:
         _record(cnpj="98.765.432/0001-10", fip_code="01234", name="ALFA SEGURADORA"),
         _record(cnpj="12.345.678/0001-91", fip_code="05678", name="ALFA SEGURADORA S.A."),
     ]
-
     matches = match_susep_entities_by_cnpj("12345678000190", records)
-
     assert len(matches) == 1
     assert matches[0].normalized_fip_code == "06947"
 
@@ -44,11 +39,7 @@ def test_multiple_exact_registry_matches_are_preserved_and_deterministic() -> No
         _record(cnpj="12.345.678/0001-90", fip_code="09999", name="B"),
         _record(cnpj="12.345.678/0001-90", fip_code="01111", name="A"),
     ]
-
-    assert matched_susep_fip_codes("12.345.678/0001-90", records) == (
-        "01111",
-        "09999",
-    )
+    assert matched_susep_fip_codes("12.345.678/0001-90", records) == ("01111", "09999")
 
 
 def test_duplicate_same_cnpj_and_fip_is_deduplicated() -> None:
@@ -56,11 +47,46 @@ def test_duplicate_same_cnpj_and_fip_is_deduplicated() -> None:
         _record(cnpj="12.345.678/0001-90", fip_code="06947", name="NAME A"),
         _record(cnpj="12345678000190", fip_code="06947", name="NAME B"),
     ]
-
     matches = match_susep_entities_by_cnpj("12345678000190", records)
-
     assert len(matches) == 1
     assert matches[0].normalized_fip_code == "06947"
+
+
+def test_olinda_row_uses_only_documented_identity_fields() -> None:
+    collector = SusepOlindaIdentityCollector()
+    record = collector._parse_row(
+        {
+            "mercodigo": 2,
+            "entcodigofip": "06947",
+            "entnome": "UNIMED SEGURADORA S.A.",
+            "entcgc": "92.863.505/0001-06",
+        }
+    )
+    assert record.legal_name == "UNIMED SEGURADORA S.A."
+    assert record.cnpj == "92863505000106"
+    assert record.fip_code == "06947"
+    assert record.entity_type == "2"
+    assert record.source == "SUSEP_OLINDA_EMPRESAS"
+
+
+@pytest.mark.parametrize(
+    "row, message",
+    [
+        ({"mercodigo": 2, "entcodigofip": "06947", "entnome": "", "entcgc": "92863505000106"}, "legal name"),
+        ({"mercodigo": 2, "entcodigofip": "06947", "entnome": "A", "entcgc": None}, "CNPJ"),
+        ({"mercodigo": 2, "entcodigofip": None, "entnome": "A", "entcgc": "92863505000106"}, "FIP code"),
+    ],
+)
+def test_olinda_invalid_identity_rows_fail_closed(row: dict, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        SusepOlindaIdentityCollector()._parse_row(row)
+
+
+def test_olinda_pagination_configuration_fails_closed() -> None:
+    with pytest.raises(ValueError, match="page_size"):
+        SusepOlindaIdentityCollector(page_size=0).fetch_records()
+    with pytest.raises(ValueError, match="max_pages"):
+        SusepOlindaIdentityCollector(max_pages=0).fetch_records()
 
 
 @pytest.mark.parametrize("value", ["", "123", "12.345.678/0001", "ABC"])
