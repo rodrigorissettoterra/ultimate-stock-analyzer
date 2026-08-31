@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,21 +88,27 @@ class SusepOlindaIdentityCollector:
     and CNPJ. The regulator/Open Insurance references the complete `DadosCadastrais`
     JSON endpoint directly, so the collector deliberately uses that verified request
     shape and performs exact matching locally rather than constructing name filters.
+
+    The public endpoint can respond slowly. Transient network failures, HTTP 429 and
+    server errors are retried with bounded exponential backoff. Other 4xx responses
+    fail immediately so an invalid request shape is never hidden by retries.
     """
 
     endpoint: str = SUSEP_OLINDA_IDENTITY_URL
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 120.0
+    attempts: int = 3
+    backoff_seconds: float = 2.0
     user_agent: str = "ultimate-stock-analyzer/0.2"
 
     def fetch_records(self) -> tuple[SusepLicensedEntityRecord, ...]:
-        with httpx.Client(
-            timeout=self.timeout_seconds,
-            follow_redirects=True,
-            headers={"User-Agent": self.user_agent},
-        ) as client:
-            response = client.get(self.endpoint, params={"$format": "json"})
-        response.raise_for_status()
-        payload = response.json()
+        if self.attempts < 1:
+            raise ValueError("attempts must be positive")
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        if self.backoff_seconds < 0:
+            raise ValueError("backoff_seconds must be non-negative")
+
+        payload = self._fetch_payload()
         rows = self._response_rows(payload)
         return tuple(self._parse_row(row) for row in rows)
 
@@ -109,6 +116,39 @@ class SusepOlindaIdentityCollector:
         """Fetch the public registry and return exact CNPJ matches only."""
 
         return match_susep_entities_by_cnpj(issuer_cnpj, self.fetch_records())
+
+    def _fetch_payload(self) -> Any:
+        last_error: Exception | None = None
+        timeout = httpx.Timeout(self.timeout_seconds, connect=min(30.0, self.timeout_seconds))
+
+        with httpx.Client(
+            timeout=timeout,
+            follow_redirects=True,
+            headers={"User-Agent": self.user_agent},
+        ) as client:
+            for attempt in range(1, self.attempts + 1):
+                try:
+                    response = client.get(self.endpoint, params={"$format": "json"})
+                    if response.status_code == 429 or response.status_code >= 500:
+                        response.raise_for_status()
+                    if 400 <= response.status_code < 500:
+                        response.raise_for_status()
+                    response.raise_for_status()
+                    return response.json()
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status != 429 and status < 500:
+                        raise
+                    last_error = exc
+                except httpx.RequestError as exc:
+                    last_error = exc
+
+                if attempt < self.attempts and self.backoff_seconds:
+                    time.sleep(self.backoff_seconds * (2 ** (attempt - 1)))
+
+        if last_error is None:
+            raise RuntimeError("SUSEP Olinda identity request failed without an error")
+        raise last_error
 
     def _response_rows(self, payload: Any) -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
