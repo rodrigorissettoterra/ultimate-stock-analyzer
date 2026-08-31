@@ -65,15 +65,27 @@ def test_growth_requires_all_six_consecutive_december_observations() -> None:
     assert metrics.net_income_cagr_5y is None
 
 
-def test_growth_requires_positive_endpoints() -> None:
-    table = _table()
-    table.loc[(table["damesano"] == 202012) & (table["cmpid"] == 518), "valor"] = 0.0
+def test_growth_requires_positive_endpoints_and_nonnegative_intermediate_history() -> None:
+    endpoint_table = _table()
+    endpoint_table.loc[
+        (endpoint_table["damesano"] == 202012) & (endpoint_table["cmpid"] == 518), "valor"
+    ] = 0.0
+    intermediate_table = _table()
+    intermediate_table.loc[
+        (intermediate_table["damesano"] == 202212)
+        & (intermediate_table["cmpid"] == 518),
+        "valor",
+    ] = -1.0
 
-    metrics = derive_susep_profitability_metrics(
-        table, susep_company_code="12345", fiscal_year=2025
+    endpoint_metrics = derive_susep_profitability_metrics(
+        endpoint_table, susep_company_code="12345", fiscal_year=2025
+    )
+    intermediate_metrics = derive_susep_profitability_metrics(
+        intermediate_table, susep_company_code="12345", fiscal_year=2025
     )
 
-    assert metrics.net_income_cagr_5y is None
+    assert endpoint_metrics.net_income_cagr_5y is None
+    assert intermediate_metrics.net_income_cagr_5y is None
 
 
 def test_duplicate_net_income_fails_roe_roa_and_growth_closed() -> None:
