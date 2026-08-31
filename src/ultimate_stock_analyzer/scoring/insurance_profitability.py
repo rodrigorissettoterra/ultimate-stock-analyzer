@@ -41,9 +41,9 @@ def derive_susep_profitability_metrics(
 
     Annual net income is the December YTD observation, never a sum of monthly
     cumulative observations. ROE and ROA use average prior/current December balance
-    snapshots. Five-year growth requires six consecutive December observations, no
-    losses anywhere in the window, and strictly positive endpoints. Missing, duplicate
-    or non-numeric evidence fails closed.
+    snapshots. Five-year growth requires six consecutive positive December net-income
+    observations with no interpolation. Missing, duplicate or non-numeric evidence
+    fails closed.
     """
 
     _require_columns(table)
@@ -158,10 +158,10 @@ def _net_income_cagr_5y(
             return None
         observations.append(value)
 
+    if any(value <= 0.0 for value in observations):
+        return None
     beginning = observations[0]
     ending = observations[-1]
-    if beginning <= 0.0 or ending <= 0.0 or any(value < 0.0 for value in observations):
-        return None
     result = (ending / beginning) ** (1.0 / _GROWTH_YEARS) - 1.0
     return result if isfinite(result) else None
 
