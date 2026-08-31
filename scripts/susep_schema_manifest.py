@@ -5,6 +5,9 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from ultimate_stock_analyzer.collectors.susep_field_dictionary import (
+    candidate_accounting_field_evidence,
+)
 from ultimate_stock_analyzer.collectors.susep_ses import SusepSesCollector
 
 
@@ -22,6 +25,9 @@ def run(output: Path) -> dict[str, object]:
         }
 
     manifest["all_tables"] = all_tables
+    manifest["accounting_field_candidates"] = candidate_accounting_field_evidence(
+        collector.read_table(archive, "Ses_campos.csv")
+    )
     manifest["generated_at"] = datetime.now(UTC).isoformat()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
@@ -35,8 +41,8 @@ def run(output: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect official SUSEP SES table schemas without persisting raw data. "
-            "The sanitized manifest records filenames and headers only."
+            "Inspect official SUSEP SES schemas and selected field-dictionary evidence "
+            "without persisting raw financial data."
         )
     )
     parser.add_argument("--output", default="./susep-schema-artifacts/schema_manifest.json")
