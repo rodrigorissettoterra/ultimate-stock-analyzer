@@ -55,7 +55,7 @@ def _registry() -> SectorModelRegistry:
     )
 
 
-def test_sector_coverage_profiles_active_catalog_and_model_assignment() -> None:
+def test_sector_coverage_profiles_catalog_join_and_model_assignment() -> None:
     report = profile_sector_model_coverage(
         [
             _record(
@@ -81,18 +81,15 @@ def test_sector_coverage_profiles_active_catalog_and_model_assignment() -> None:
             ),
         ],
         registry=_registry(),
-        classification_issuer_codes=("BANK", "UTIL", "RETL", "CRI1"),
-        active_catalog_issuer_codes=("BANK", "UTIL", "RETL", "NEWC"),
+        classification_rows=4,
+        outside_active_company_catalog_issuer_codes=("CRI1",),
     )
 
     assert report.classification_rows == 4
-    assert report.active_catalog_issuers == 4
-    assert report.classified_active_catalog_issuers == 3
-    assert report.active_catalog_unclassified_issuers == 1
-    assert report.active_catalog_classification_coverage == 0.75
-    assert report.classification_rows_outside_active_catalog == 1
-    assert report.outside_active_catalog_issuer_codes == ("CRI1",)
-    assert report.unclassified_active_catalog_issuer_codes == ("NEWC",)
+    assert report.company_catalog_mapped_rows == 3
+    assert report.company_catalog_unmapped_rows == 1
+    assert report.company_catalog_join_coverage == 0.75
+    assert report.outside_active_company_catalog_issuer_codes == ("CRI1",)
     assert report.normalized_companies == 3
     assert report.model_counts == {"banks": 1, "general_corporate": 1, "utilities": 1}
     assert report.specialized_companies == 2
@@ -112,25 +109,16 @@ def test_sector_coverage_reports_overlapping_specialized_rules() -> None:
             ),
         ],
         registry=_registry(),
-        classification_issuer_codes=("UTIL",),
-        active_catalog_issuer_codes=("UTIL",),
+        classification_rows=1,
     )
     assert report.ambiguous_specialized_matches == 0
 
 
-def test_sector_coverage_rejects_normalized_code_outside_exact_intersection() -> None:
-    with pytest.raises(ValueError, match="outside the exact"):
+def test_sector_coverage_rejects_impossible_outside_catalog_count() -> None:
+    with pytest.raises(ValueError, match="exceeds"):
         profile_sector_model_coverage(
-            [
-                _record(
-                    "cvm:1",
-                    "BANK",
-                    sector="Financeiro",
-                    subsector="Intermediários Financeiros",
-                    segment="Bancos",
-                )
-            ],
+            [],
             registry=_registry(),
-            classification_issuer_codes=("BANK",),
-            active_catalog_issuer_codes=("OTHER",),
+            classification_rows=0,
+            outside_active_company_catalog_issuer_codes=("CRI1",),
         )
