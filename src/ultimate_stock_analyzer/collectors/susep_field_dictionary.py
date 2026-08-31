@@ -5,6 +5,7 @@ import unicodedata
 import pandas as pd
 
 ACCOUNTING_FIELD_CANDIDATES = (542, 4069)
+PROFITABILITY_FIELD_CANDIDATES = (518, 1039, 3333, 5035)
 PROFITABILITY_FIELD_TERMS = (
     "ATIVO TOTAL",
     "TOTAL DO ATIVO",
@@ -24,31 +25,28 @@ FIELD_DICTIONARY_COLUMNS = (
 
 
 def candidate_accounting_field_evidence(table: pd.DataFrame) -> dict[str, object]:
-    """Return exact sanitized dictionary rows for candidate SUSEP accounting fields.
+    """Return exact sanitized dictionary rows for candidate SUSEP accounting fields."""
 
-    Candidate IDs are discovery inputs only. This function records what the official
-    ``Ses_campos.csv`` dictionary says about those exact IDs and never promotes their
-    semantics into scoring by itself.
+    return _candidate_field_evidence(
+        table,
+        candidates=ACCOUNTING_FIELD_CANDIDATES,
+        evidence_kind="accounting_field_candidates",
+    )
+
+
+def profitability_field_candidate_evidence(table: pd.DataFrame) -> dict[str, object]:
+    """Return exact official dictionary rows for profitability candidate CMPIDs.
+
+    The IDs come from regulator material or external discovery, but this function only
+    records what the official ``Ses_campos.csv`` dictionary says about the exact IDs.
+    It never promotes their semantics into scoring by itself.
     """
 
-    _require_dictionary_columns(table)
-
-    item_ids = pd.to_numeric(table["nuitem"], errors="coerce")
-    evidence: dict[str, object] = {}
-    for candidate in ACCOUNTING_FIELD_CANDIDATES:
-        selected = table.loc[item_ids == candidate, list(FIELD_DICTIONARY_COLUMNS)].copy()
-        rows = _sanitized_rows(selected)
-        evidence[str(candidate)] = {
-            "present": bool(rows),
-            "rows": rows,
-        }
-
-    return {
-        "source_table": "Ses_campos.csv",
-        "candidate_ids": list(ACCOUNTING_FIELD_CANDIDATES),
-        "semantics_promoted": False,
-        "fields": evidence,
-    }
+    return _candidate_field_evidence(
+        table,
+        candidates=PROFITABILITY_FIELD_CANDIDATES,
+        evidence_kind="profitability_field_candidates",
+    )
 
 
 def profitability_field_evidence(table: pd.DataFrame) -> dict[str, object]:
@@ -79,6 +77,32 @@ def profitability_field_evidence(table: pd.DataFrame) -> dict[str, object]:
         "source_table": "Ses_campos.csv",
         "search_terms": list(PROFITABILITY_FIELD_TERMS),
         "matching_mode": "literal_case_and_accent_normalized_substring",
+        "semantics_promoted": False,
+        "fields": evidence,
+    }
+
+
+def _candidate_field_evidence(
+    table: pd.DataFrame,
+    *,
+    candidates: tuple[int, ...],
+    evidence_kind: str,
+) -> dict[str, object]:
+    _require_dictionary_columns(table)
+    item_ids = pd.to_numeric(table["nuitem"], errors="coerce")
+    evidence: dict[str, object] = {}
+    for candidate in candidates:
+        selected = table.loc[item_ids == candidate, list(FIELD_DICTIONARY_COLUMNS)].copy()
+        rows = _sanitized_rows(selected)
+        evidence[str(candidate)] = {
+            "present": bool(rows),
+            "rows": rows,
+        }
+
+    return {
+        "source_table": "Ses_campos.csv",
+        "evidence_kind": evidence_kind,
+        "candidate_ids": list(candidates),
         "semantics_promoted": False,
         "fields": evidence,
     }
