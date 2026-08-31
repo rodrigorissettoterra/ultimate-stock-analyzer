@@ -1,0 +1,63 @@
+name: b3-current-security-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b3-current-security-audit-smoke.yml"
+      - "scripts/b3_current_security_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_company_detail.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_cotahist_securities.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/universe/b3_current_security_audit.py"
+      - "src/ultimate_stock_analyzer/domain/master.py"
+      - "src/ultimate_stock_analyzer/market/prices.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Audit B3 current security evidence
+        run: |
+          python scripts/b3_current_security_audit.py \
+            --workers 4 \
+            --output b3-current-security-audit.json
+      - name: Publish compact summary
+        if: always()
+        run: |
+          if [ -f b3-current-security-audit.json ]; then
+            python - <<'PY'
+          import json
+          with open("b3-current-security-audit.json", encoding="utf-8") as handle:
+              data = json.load(handle)
+          report = data["report"]
+          print(json.dumps({
+              "year": data["year"],
+              "candidate_company_ids": report["candidate_company_ids"],
+              "company_status_counts": report["company_status_counts"],
+              "share_quotation_date_present": report["share_quotation_date_present"],
+              "share_quotation_date_missing": report["share_quotation_date_missing"],
+              "companies_with_current_spot_trade": report["companies_with_current_spot_trade"],
+              "cotahist_latest_trade_date": report["cotahist_latest_trade_date"],
+              "share_dated_specification_counts": report["share_dated_specification_counts"],
+              "review_cases": data["review_cases"],
+          }, ensure_ascii=False, indent=2))
+          PY
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b3-current-security-audit
+          path: b3-current-security-audit.json
+          if-no-files-found: error
+          retention-days: 14
