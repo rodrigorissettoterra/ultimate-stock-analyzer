@@ -89,9 +89,10 @@ class SusepOlindaIdentityCollector:
     JSON endpoint directly, so the collector deliberately uses that verified request
     shape and performs exact matching locally rather than constructing name filters.
 
-    The public endpoint can respond slowly. Transient network failures, HTTP 429 and
-    server errors are retried with bounded exponential backoff. Other 4xx responses
-    fail immediately so an invalid request shape is never hidden by retries.
+    Rows without CNPJ are not usable as deterministic issuer identity evidence and are
+    excluded before parsing. Any non-null malformed CNPJ/FIP or malformed response still
+    fails closed. Transient network failures, HTTP 429 and server errors are retried with
+    bounded exponential backoff; other 4xx responses fail immediately.
     """
 
     endpoint: str = SUSEP_OLINDA_IDENTITY_URL
@@ -110,7 +111,7 @@ class SusepOlindaIdentityCollector:
 
         payload = self._fetch_payload()
         rows = self._response_rows(payload)
-        return tuple(self._parse_row(row) for row in rows)
+        return tuple(self._parse_row(row) for row in rows if self._is_identity_candidate(row))
 
     def fetch_by_cnpj(self, issuer_cnpj: str) -> tuple[SusepLicensedEntityRecord, ...]:
         """Fetch the public registry and return exact CNPJ matches only."""
@@ -129,10 +130,6 @@ class SusepOlindaIdentityCollector:
             for attempt in range(1, self.attempts + 1):
                 try:
                     response = client.get(self.endpoint, params={"$format": "json"})
-                    if response.status_code == 429 or response.status_code >= 500:
-                        response.raise_for_status()
-                    if 400 <= response.status_code < 500:
-                        response.raise_for_status()
                     response.raise_for_status()
                     return response.json()
                 except httpx.HTTPStatusError as exc:
@@ -159,6 +156,11 @@ class SusepOlindaIdentityCollector:
         if not all(isinstance(row, dict) for row in rows):
             raise TypeError("unexpected SUSEP Olinda identity row shape")
         return rows
+
+    def _is_identity_candidate(self, row: dict[str, Any]) -> bool:
+        """Return whether a row contains the minimum keys for exact CNPJ/FIP identity."""
+
+        return row.get("entcgc") not in (None, "") and row.get("entcodigofip") not in (None, "")
 
     def _parse_row(self, row: dict[str, Any]) -> SusepLicensedEntityRecord:
         name = row.get("entnome")
