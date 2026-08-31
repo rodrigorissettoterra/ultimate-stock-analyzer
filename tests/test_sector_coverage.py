@@ -3,7 +3,10 @@ from datetime import UTC, datetime
 import pytest
 
 from ultimate_stock_analyzer.domain.master import SectorClassificationRecord
-from ultimate_stock_analyzer.scoring.sector_coverage import profile_sector_model_coverage
+from ultimate_stock_analyzer.scoring.sector_coverage import (
+    SectorCoverageCompanySample,
+    profile_sector_model_coverage,
+)
 from ultimate_stock_analyzer.scoring.sector_models import (
     SectorModelDefinition,
     SectorModelRegistry,
@@ -110,9 +113,14 @@ def test_sector_coverage_profiles_catalog_join_and_model_assignment() -> None:
     assert report.fallback_issuer_samples_by_segment == {
         "Consumo / Comércio / Varejo": ("RETL",)
     }
+    assert report.fallback_company_samples_by_segment == {
+        "Consumo / Comércio / Varejo": (
+            SectorCoverageCompanySample(issuer_code="RETL", company_id="cvm:3"),
+        )
+    }
 
 
-def test_sector_coverage_bounds_and_sorts_fallback_issuer_samples() -> None:
+def test_sector_coverage_bounds_and_sorts_fallback_samples() -> None:
     report = profile_sector_model_coverage(
         [
             _record("cvm:1", "ZZZZ", sector="Consumo", subsector="Comércio", segment="Varejo"),
@@ -134,6 +142,15 @@ def test_sector_coverage_bounds_and_sorts_fallback_issuer_samples() -> None:
     assert report.fallback_issuer_samples_by_segment == {
         "Consumo / Comércio / Atacado": ("MMMM",),
         "Consumo / Comércio / Varejo": ("AAAA", "ZZZZ"),
+    }
+    assert report.fallback_company_samples_by_segment == {
+        "Consumo / Comércio / Atacado": (
+            SectorCoverageCompanySample(issuer_code="MMMM", company_id="cvm:3"),
+        ),
+        "Consumo / Comércio / Varejo": (
+            SectorCoverageCompanySample(issuer_code="AAAA", company_id="cvm:2"),
+            SectorCoverageCompanySample(issuer_code="ZZZZ", company_id="cvm:1"),
+        ),
     }
 
 

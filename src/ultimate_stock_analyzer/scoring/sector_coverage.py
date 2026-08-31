@@ -8,6 +8,12 @@ from ultimate_stock_analyzer.domain.master import SectorClassificationRecord
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class SectorCoverageCompanySample:
+    issuer_code: str
+    company_id: str
+
+
 @dataclass(frozen=True, slots=True)
 class SectorCoverageReport:
     classification_rows: int
@@ -27,6 +33,9 @@ class SectorCoverageReport:
     fallback_by_segment: dict[str, int]
     fallback_issuer_samples_by_subsector: dict[str, tuple[str, ...]]
     fallback_issuer_samples_by_segment: dict[str, tuple[str, ...]]
+    fallback_company_samples_by_segment: dict[
+        str, tuple[SectorCoverageCompanySample, ...]
+    ]
     ambiguous_specialized_matches: int
     outside_active_company_catalog_issuer_codes: tuple[str, ...]
     verified_non_equity_issuer_codes: tuple[str, ...]
@@ -84,6 +93,9 @@ def profile_sector_model_coverage(
     fallback_by_segment: Counter[str] = Counter()
     fallback_issuer_codes_by_subsector: defaultdict[str, set[str]] = defaultdict(set)
     fallback_issuer_codes_by_segment: defaultdict[str, set[str]] = defaultdict(set)
+    fallback_companies_by_segment: defaultdict[
+        str, set[SectorCoverageCompanySample]
+    ] = defaultdict(set)
     ambiguous: list[str] = []
     for record in records:
         row = {
@@ -104,6 +116,12 @@ def profile_sector_model_coverage(
             if issuer_code:
                 fallback_issuer_codes_by_subsector[subsector_key].add(issuer_code)
                 fallback_issuer_codes_by_segment[segment_key].add(issuer_code)
+                fallback_companies_by_segment[segment_key].add(
+                    SectorCoverageCompanySample(
+                        issuer_code=issuer_code,
+                        company_id=record.company_id,
+                    )
+                )
         matches = [
             model.model_id
             for model in registry.models
@@ -123,6 +141,10 @@ def profile_sector_model_coverage(
     fallback_segment_samples = {
         key: tuple(sorted(codes))[:fallback_sample_limit]
         for key, codes in sorted(fallback_issuer_codes_by_segment.items())
+    }
+    fallback_company_samples = {
+        key: tuple(sorted(companies))[:fallback_sample_limit]
+        for key, companies in sorted(fallback_companies_by_segment.items())
     }
     return SectorCoverageReport(
         classification_rows=classification_rows,
@@ -146,6 +168,7 @@ def profile_sector_model_coverage(
         fallback_by_segment=dict(sorted(fallback_by_segment.items())),
         fallback_issuer_samples_by_subsector=fallback_subsector_samples,
         fallback_issuer_samples_by_segment=fallback_segment_samples,
+        fallback_company_samples_by_segment=fallback_company_samples,
         ambiguous_specialized_matches=len(ambiguous),
         outside_active_company_catalog_issuer_codes=outside_catalog[:sample_limit],
         verified_non_equity_issuer_codes=verified_exclusions[:sample_limit],
