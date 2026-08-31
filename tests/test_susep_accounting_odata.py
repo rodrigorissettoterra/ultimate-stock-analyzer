@@ -42,16 +42,19 @@ def test_accounting_row_accepts_negative_value() -> None:
     assert row.value == Decimal("-50")
 
 
-def test_service_document_names_are_exact_and_sorted() -> None:
-    service = SusepAccountingODataService()
-    service._get_json = lambda *_args, **_kwargs: {
-        "value": [
-            {"name": "DRE", "kind": "EntitySet", "url": "DRE"},
-            {"name": "Ativo", "kind": "EntitySet", "url": "Ativo"},
-            {"name": "DRE", "kind": "EntitySet", "url": "DRE"},
-        ]
-    }
-    assert service.fetch_resource_names() == ("Ativo", "DRE")
+def test_service_document_names_are_exact_and_sorted(monkeypatch) -> None:
+    monkeypatch.setattr(
+        SusepAccountingODataService,
+        "_get_json",
+        lambda *_args, **_kwargs: {
+            "value": [
+                {"name": "DRE", "kind": "EntitySet", "url": "DRE"},
+                {"name": "Ativo", "kind": "EntitySet", "url": "Ativo"},
+                {"name": "DRE", "kind": "EntitySet", "url": "DRE"},
+            ]
+        },
+    )
+    assert SusepAccountingODataService().fetch_resource_names() == ("Ativo", "DRE")
 
 
 @pytest.mark.parametrize(
@@ -63,11 +66,14 @@ def test_service_document_names_are_exact_and_sorted() -> None:
         {"value": [{"name": "Ativo", "url": None}]},
     ],
 )
-def test_service_document_shape_fails_closed(payload) -> None:
-    service = SusepAccountingODataService()
-    service._get_json = lambda *_args, **_kwargs: payload
+def test_service_document_shape_fails_closed(monkeypatch, payload) -> None:
+    monkeypatch.setattr(
+        SusepAccountingODataService,
+        "_get_json",
+        lambda *_args, **_kwargs: payload,
+    )
     with pytest.raises((TypeError, ValueError)):
-        service.fetch_resource_names()
+        SusepAccountingODataService().fetch_resource_names()
 
 
 @pytest.mark.parametrize(
