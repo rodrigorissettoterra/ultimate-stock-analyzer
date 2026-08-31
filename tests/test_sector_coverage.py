@@ -103,6 +103,26 @@ def test_sector_coverage_profiles_catalog_join_and_model_assignment() -> None:
     assert report.specialized_coverage == 2 / 3
     assert report.fallback_by_sector == {"Consumo": 1}
     assert report.fallback_by_subsector == {"Consumo / Comércio": 1}
+    assert report.fallback_issuer_samples_by_subsector == {
+        "Consumo / Comércio": ("RETL",)
+    }
+
+
+def test_sector_coverage_bounds_and_sorts_fallback_issuer_samples() -> None:
+    report = profile_sector_model_coverage(
+        [
+            _record("cvm:1", "ZZZZ", sector="Consumo", subsector="Comércio", segment="Varejo"),
+            _record("cvm:2", "AAAA", sector="Consumo", subsector="Comércio", segment="Varejo"),
+            _record("cvm:3", "MMMM", sector="Consumo", subsector="Comércio", segment="Varejo"),
+        ],
+        registry=_registry(),
+        classification_rows=3,
+        fallback_sample_limit=2,
+    )
+
+    assert report.fallback_issuer_samples_by_subsector == {
+        "Consumo / Comércio": ("AAAA", "MMMM")
+    }
 
 
 def test_sector_coverage_keeps_unknown_outside_catalog_rows_unresolved() -> None:
@@ -146,4 +166,14 @@ def test_sector_coverage_rejects_impossible_outside_catalog_count() -> None:
             registry=_registry(),
             classification_rows=0,
             outside_active_company_catalog_issuer_codes=("CRI1",),
+        )
+
+
+def test_sector_coverage_rejects_negative_fallback_sample_limit() -> None:
+    with pytest.raises(ValueError, match="fallback_sample_limit"):
+        profile_sector_model_coverage(
+            [],
+            registry=_registry(),
+            classification_rows=0,
+            fallback_sample_limit=-1,
         )
