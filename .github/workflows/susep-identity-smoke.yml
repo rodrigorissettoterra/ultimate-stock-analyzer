@@ -1,0 +1,36 @@
+name: susep-identity-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 10 * * 0"
+  pull_request:
+    paths:
+      - ".github/workflows/susep-identity-smoke.yml"
+      - "scripts/susep_identity_smoke.py"
+      - "src/ultimate_stock_analyzer/collectors/susep_identity.py"
+      - "tests/test_susep_identity.py"
+
+permissions:
+  contents: read
+
+jobs:
+  identity-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e .
+      - name: Validate official SUSEP Olinda identity API
+        run: python scripts/susep_identity_smoke.py --output susep-identity-artifacts/identity_manifest.json
+      - name: Upload aggregate identity manifest only
+        uses: actions/upload-artifact@v4
+        with:
+          name: susep-identity-manifest
+          path: susep-identity-artifacts/identity_manifest.json
+          if-no-files-found: error
+          retention-days: 14
