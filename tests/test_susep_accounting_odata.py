@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
+    VERIFIED_ACCOUNTING_RESOURCES,
     SusepAccountingODataService,
 )
 
@@ -39,7 +40,7 @@ def test_accounting_row_accepts_negative_value() -> None:
             "valor": -50,
         }
     )
-    assert row.value == Decimal("-50")
+    assert row.value == Decimal(-50)
 
 
 def test_service_document_names_are_exact_and_sorted(monkeypatch) -> None:
@@ -55,6 +56,19 @@ def test_service_document_names_are_exact_and_sorted(monkeypatch) -> None:
         },
     )
     assert SusepAccountingODataService().fetch_resource_names() == ("Ativo", "DRE")
+
+
+def test_verified_accounting_resources_are_exact() -> None:
+    assert VERIFIED_ACCOUNTING_RESOURCES == (
+        "ContabeisAtivo",
+        "ContabeisPassivo",
+        "ContabeisDRE",
+        "ContabeisDRER",
+        "ContabeisDMPL",
+        "ContabeisDMPS",
+        "ContabeisDFCD",
+        "ContabeisDFCI",
+    )
 
 
 @pytest.mark.parametrize(
