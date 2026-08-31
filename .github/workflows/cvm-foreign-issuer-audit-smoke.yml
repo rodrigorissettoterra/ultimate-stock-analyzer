@@ -1,0 +1,45 @@
+name: cvm-foreign-issuer-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-foreign-issuer-audit-smoke.yml"
+      - "scripts/cvm_foreign_issuer_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_foreign.py"
+      - "tests/test_cvm_foreign_issuer.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Audit canonical foreign issuer identities
+        run: |
+          python scripts/cvm_foreign_issuer_audit.py \
+            --foreign-company-id cvm:80195 \
+            --foreign-company-id cvm:80152 \
+            --negative-control-company-id cvm:9512 \
+            --output cvm-foreign-issuer-audit.json
+      - name: Publish audit summary
+        if: always()
+        run: |
+          if [ -f cvm-foreign-issuer-audit.json ]; then
+            cat cvm-foreign-issuer-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-foreign-issuer-audit
+          path: cvm-foreign-issuer-audit.json
+          if-no-files-found: error
+          retention-days: 14
