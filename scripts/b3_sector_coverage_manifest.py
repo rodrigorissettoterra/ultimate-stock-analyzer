@@ -9,10 +9,16 @@ from ultimate_stock_analyzer.collectors.b3_classification import (
     B3_CLASSIFICATION_APP_URL,
     B3IndustryClassificationCollector,
 )
+from ultimate_stock_analyzer.scoring.applicability_review import (
+    load_structural_applicability_reviews,
+)
 from ultimate_stock_analyzer.scoring.sector_coverage import profile_sector_model_coverage
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 DEFAULT_EXCLUSIONS = "config/universe/b3_non_equity_issuer_exclusions_v0.1.json"
+DEFAULT_APPLICABILITY_REVIEWS = (
+    "config/universe/b3_structural_applicability_reviews_v0.1.json"
+)
 
 
 def _load_verified_non_equity_exclusions(path: str) -> tuple[str, tuple[str, ...]]:
@@ -57,6 +63,11 @@ def main() -> None:
         help="Audited B3 issuer exclusions JSON.",
     )
     parser.add_argument(
+        "--applicability-reviews",
+        default=DEFAULT_APPLICABILITY_REVIEWS,
+        help="Diagnostic-only structural applicability review registry JSON.",
+    )
+    parser.add_argument(
         "--output",
         default="b3-sector-coverage.json",
         help="Sanitized JSON output path.",
@@ -73,6 +84,9 @@ def main() -> None:
     exclusions_version, verified_non_equity_codes = (
         _load_verified_non_equity_exclusions(args.non_equity_exclusions)
     )
+    applicability_reviews = load_structural_applicability_reviews(
+        args.applicability_reviews
+    )
     report = profile_sector_model_coverage(
         normalized,
         registry=registry,
@@ -81,6 +95,7 @@ def main() -> None:
             collector.last_unmapped_issuer_codes
         ),
         verified_non_equity_issuer_codes=verified_non_equity_codes,
+        applicability_review_registry=applicability_reviews,
     )
 
     payload = {
@@ -89,6 +104,7 @@ def main() -> None:
         "source_url": B3_CLASSIFICATION_APP_URL,
         "registry_version": registry.version,
         "non_equity_exclusions_version": exclusions_version,
+        "structural_applicability_review_version": applicability_reviews.version,
         "point_in_time_eligible": False,
         "report": report.to_dict(),
         "notes": [
@@ -97,6 +113,9 @@ def main() -> None:
             "equity_candidate_identity_coverage excludes only explicitly audited non-equity/non-exchange-equity issuer rows and still is not a full B3 equity-universe denominator.",
             "Unresolved outside-catalog rows remain visible and are never guessed into an issuer identity.",
             "general_corporate fallback is valid but its sector/subsector distribution is reported for economic-model review.",
+            "Structural applicability review statuses are diagnostic_only and do not alter model routing, score, rankability, weights or thresholds.",
+            "review_non_fallback_company_ids exposes stale review entries if a reviewed issuer later routes to a specialized model.",
+            "review_unmatched_company_ids exposes reviewed canonical CVM identities absent from the current B3 classification snapshot.",
             "ambiguous_specialized_matches flags rows matching more than one specialized model and requires rule review.",
         ],
     }
