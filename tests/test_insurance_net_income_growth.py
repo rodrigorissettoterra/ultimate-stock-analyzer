@@ -65,6 +65,7 @@ def test_duplicate_december_value_fails_closed() -> None:
 
 def test_non_numeric_value_fails_closed() -> None:
     table = _table({2019: 100.0, 2020: 110.0, 2021: 120.0, 2022: 130.0, 2023: 140.0, 2024: 150.0})
+    table["valor"] = table["valor"].astype(object)
     table.loc[table["damesano"] == 202212, "valor"] = "invalid"
     metrics = derive_susep_net_income_cagr_5y(
         table, susep_company_code="6947", fiscal_year=2024
