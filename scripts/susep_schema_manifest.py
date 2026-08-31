@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 
 from ultimate_stock_analyzer.collectors.susep_field_dictionary import (
     candidate_accounting_field_evidence,
+    profitability_field_candidate_evidence,
     profitability_field_evidence,
 )
 from ultimate_stock_analyzer.collectors.susep_ses import SusepSesCollector
@@ -28,6 +29,9 @@ def run(output: Path) -> dict[str, object]:
     field_dictionary = collector.read_table(archive, "Ses_campos.csv")
     manifest["all_tables"] = all_tables
     manifest["accounting_field_candidates"] = candidate_accounting_field_evidence(
+        field_dictionary
+    )
+    manifest["profitability_field_candidates"] = profitability_field_candidate_evidence(
         field_dictionary
     )
     manifest["profitability_field_evidence"] = profitability_field_evidence(
