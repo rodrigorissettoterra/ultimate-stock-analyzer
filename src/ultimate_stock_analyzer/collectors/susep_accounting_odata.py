@@ -16,6 +16,16 @@ SUSEP_ACCOUNTING_DOCUMENTATION_URL = (
 SUSEP_ACCOUNTING_ODATA_ROOT = (
     "https://dados.susep.gov.br/olinda/servico/informacoescontabeis/versao/v1/odata"
 )
+VERIFIED_ACCOUNTING_RESOURCES = (
+    "ContabeisAtivo",
+    "ContabeisPassivo",
+    "ContabeisDRE",
+    "ContabeisDRER",
+    "ContabeisDMPL",
+    "ContabeisDMPS",
+    "ContabeisDFCD",
+    "ContabeisDFCI",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +76,12 @@ class SusepAccountingODataService:
         if not names:
             raise ValueError("SUSEP accounting OData service exposed no resources")
         return tuple(sorted(names))
+
+    def verified_resources_present(self) -> bool:
+        """Return whether every empirically verified canonical resource is exposed."""
+
+        names = set(self.fetch_resource_names())
+        return set(VERIFIED_ACCOUNTING_RESOURCES).issubset(names)
 
     def parse_accounting_row(self, row: dict[str, Any]) -> SusepAccountingRow:
         """Parse documented accounting fields without inferring financial semantics."""
@@ -140,7 +156,7 @@ def _parse_reference_month(value: Any) -> date:
     if len(text) < 7:
         raise ValueError("SUSEP accounting row has invalid reference month")
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text)
     except ValueError:
         try:
             parsed_date = date.fromisoformat(text[:10])
