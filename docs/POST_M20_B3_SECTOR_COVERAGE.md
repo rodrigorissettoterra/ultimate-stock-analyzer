@@ -24,8 +24,8 @@ The manifest reports:
 - normalized company count;
 - company count by selected sector model;
 - specialized-model versus `general_corporate` fallback counts;
-- `general_corporate` fallback distribution by sector and subsector;
-- up to five sorted issuer-code samples for each fallback sector/subsector bucket;
+- `general_corporate` fallback distribution by sector, subsector and full sector/subsector/segment path;
+- up to five sorted issuer-code samples for each fallback subsector and segment bucket;
 - specialized-model routing coverage;
 - rows matching more than one specialized model rule;
 - bounded samples of outside-catalog issuer codes and ambiguous company IDs.
@@ -34,7 +34,7 @@ The raw join ratio is deliberately **not** labeled as complete B3 equity-univers
 
 `equity_candidate_identity_coverage` removes only issuer rows present in the audited exclusion registry. It answers whether the remaining classification rows resolve to the active company catalog; it still does **not** establish a complete B3 equity-universe denominator.
 
-`general_corporate` is the registry's intentional default model, so fallback is not treated as an error. Its sector/subsector distribution and bounded issuer-code samples are reported to support an economic review of whether any structurally different business should receive a specialized model. The samples are diagnostic only: they never alter routing or scoring.
+`general_corporate` is the registry's intentional default model, so fallback is not treated as an error. Its sector/subsector/segment distribution and bounded issuer-code samples are reported to support an economic review of whether any structurally different business should receive a specialized model. The samples are diagnostic only: they never alter routing or scoring.
 
 ## Audited outside-catalog rows — 2026-08-31
 
@@ -51,6 +51,12 @@ The live smoke for PR #52 reported five industry-classification issuer codes out
 The machine-readable evidence registry is `config/universe/b3_non_equity_issuer_exclusions_v0.1.json`. Entries must contain explicit B3 evidence URLs. A code is considered verified only when it is both outside the active company catalog in the live collection **and** present in that reviewed registry. Any newly observed outside-catalog code remains unresolved and visible in the smoke artifact.
 
 This registry is current-state evidence only. It must not be reused as historical point-in-time membership evidence.
+
+## Economic fallback audit
+
+The fallback audit is deliberately descriptive before it becomes prescriptive. A company appearing under `general_corporate` is not automatically a routing error. The segment-level breakdown exists to distinguish ordinary operating companies from business models whose accounting/economics can make corporate metrics such as ROIC, EBIT margin, free-cash-flow margin or net-debt/EBITDA structurally inappropriate.
+
+No specialized model or exclusion should be created from a broad sector label alone. Any future change must be supported by the full official B3 classification path and issuer-level economic evidence, with regression tests preventing accidental capture of economically different issuers.
 
 ## Gas-utility routing correction
 
