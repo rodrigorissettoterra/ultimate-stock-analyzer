@@ -34,13 +34,22 @@ def main() -> None:
     workbook = collector.download_workbook()
     catalog = collector.download_company_catalog_archive()
     workbook_rows = collector.parse_workbook(workbook)
+    catalog_rows = collector.parse_company_catalog_archive(catalog)
     normalized = collector.normalize(workbook, catalog, collected_at=collected_at)
     registry = SectorModelRegistry.from_yaml(args.registry)
+
+    active_catalog_issuer_codes = {
+        str(row.get("issuingCompany") or "").strip().upper()
+        for row in catalog_rows
+        if str(row.get("status") or "").strip().upper() == "A"
+        and str(row.get("issuingCompany") or "").strip()
+        and str(row.get("codeCVM") or "").strip()
+    }
     report = profile_sector_model_coverage(
         normalized,
         registry=registry,
-        classification_rows=len(workbook_rows),
-        unmapped_issuer_codes=collector.last_unmapped_issuer_codes,
+        classification_issuer_codes=(row.issuer_code for row in workbook_rows),
+        active_catalog_issuer_codes=active_catalog_issuer_codes,
     )
 
     payload = {
@@ -52,6 +61,8 @@ def main() -> None:
         "report": report.to_dict(),
         "notes": [
             "Artifact contains aggregates and bounded public issuer identifiers only; no raw B3 workbook/catalog is persisted.",
+            "The primary classification coverage denominator is the active official B3 company catalog, not every workbook row.",
+            "Workbook rows outside the active company catalog may represent non-equity/instrument classifications and are reported separately.",
             "general_corporate fallback is a valid model assignment, not by itself a data-quality failure.",
             "ambiguous_specialized_matches flags rows matching more than one specialized model and requires rule review.",
         ],
