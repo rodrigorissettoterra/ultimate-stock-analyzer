@@ -103,8 +103,12 @@ def test_sector_coverage_profiles_catalog_join_and_model_assignment() -> None:
     assert report.specialized_coverage == 2 / 3
     assert report.fallback_by_sector == {"Consumo": 1}
     assert report.fallback_by_subsector == {"Consumo / Comércio": 1}
+    assert report.fallback_by_segment == {"Consumo / Comércio / Varejo": 1}
     assert report.fallback_issuer_samples_by_subsector == {
         "Consumo / Comércio": ("RETL",)
+    }
+    assert report.fallback_issuer_samples_by_segment == {
+        "Consumo / Comércio / Varejo": ("RETL",)
     }
 
 
@@ -113,7 +117,7 @@ def test_sector_coverage_bounds_and_sorts_fallback_issuer_samples() -> None:
         [
             _record("cvm:1", "ZZZZ", sector="Consumo", subsector="Comércio", segment="Varejo"),
             _record("cvm:2", "AAAA", sector="Consumo", subsector="Comércio", segment="Varejo"),
-            _record("cvm:3", "MMMM", sector="Consumo", subsector="Comércio", segment="Varejo"),
+            _record("cvm:3", "MMMM", sector="Consumo", subsector="Comércio", segment="Atacado"),
         ],
         registry=_registry(),
         classification_rows=3,
@@ -122,6 +126,14 @@ def test_sector_coverage_bounds_and_sorts_fallback_issuer_samples() -> None:
 
     assert report.fallback_issuer_samples_by_subsector == {
         "Consumo / Comércio": ("AAAA", "MMMM")
+    }
+    assert report.fallback_by_segment == {
+        "Consumo / Comércio / Atacado": 1,
+        "Consumo / Comércio / Varejo": 2,
+    }
+    assert report.fallback_issuer_samples_by_segment == {
+        "Consumo / Comércio / Atacado": ("MMMM",),
+        "Consumo / Comércio / Varejo": ("AAAA", "ZZZZ"),
     }
 
 
