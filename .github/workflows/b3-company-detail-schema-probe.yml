@@ -1,0 +1,40 @@
+name: b3-company-detail-schema-probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b3-company-detail-schema-probe.yml"
+      - "scripts/b3_company_detail_schema_probe.py"
+      - "tests/test_b3_company_detail_schema_probe.py"
+      - "docs/POST_M20_B3_COMPANY_DETAIL_SCHEMA_PROBE.md"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Probe B3 GetDetail public schema
+        run: python scripts/b3_company_detail_schema_probe.py
+      - name: Publish schema summary
+        if: always()
+        run: |
+          if [ -f b3-company-detail-schema-probe.json ]; then
+            cat b3-company-detail-schema-probe.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b3-company-detail-schema-probe
+          path: b3-company-detail-schema-probe.json
+          if-no-files-found: error
+          retention-days: 14
