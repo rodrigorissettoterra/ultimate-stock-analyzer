@@ -8,20 +8,16 @@ from ultimate_stock_analyzer.scoring.insurance_profitability import (
 
 
 def _table(*, net_income: float = 20.0) -> pd.DataFrame:
-    rows = [
-        {"coenti": 12345, "damesano": 202512, "cmpid": 518, "valor": net_income},
-        {"coenti": 12345, "damesano": 202512, "cmpid": 3333, "valor": 120.0},
-        {"coenti": 12345, "damesano": 202412, "cmpid": 3333, "valor": 80.0},
-        {"coenti": 12345, "damesano": 202512, "cmpid": 1039, "valor": 600.0},
-        {"coenti": 12345, "damesano": 202412, "cmpid": 1039, "valor": 400.0},
-        {"coenti": 99999, "damesano": 202512, "cmpid": 518, "valor": 999.0},
-    ]
-    historical_income = {2020: 10.0, 2021: 11.0, 2022: 12.0, 2023: 14.0, 2024: 16.0}
-    rows.extend(
-        {"coenti": 12345, "damesano": year * 100 + 12, "cmpid": 518, "valor": value}
-        for year, value in historical_income.items()
+    return pd.DataFrame(
+        [
+            {"coenti": 12345, "damesano": 202512, "cmpid": 518, "valor": net_income},
+            {"coenti": 12345, "damesano": 202512, "cmpid": 3333, "valor": 120.0},
+            {"coenti": 12345, "damesano": 202412, "cmpid": 3333, "valor": 80.0},
+            {"coenti": 12345, "damesano": 202512, "cmpid": 1039, "valor": 600.0},
+            {"coenti": 12345, "damesano": 202412, "cmpid": 1039, "valor": 400.0},
+            {"coenti": 99999, "damesano": 202512, "cmpid": 518, "valor": 999.0},
+        ]
     )
-    return pd.DataFrame(rows)
 
 
 def _derive(table: pd.DataFrame, *, company: str = "12345", year: int = 2025):
@@ -30,49 +26,24 @@ def _derive(table: pd.DataFrame, *, company: str = "12345", year: int = 2025):
     )
 
 
-def test_profitability_uses_december_ytd_average_balances_and_strict_growth() -> None:
+def test_profitability_uses_december_ytd_and_average_balances() -> None:
     metrics = _derive(_table())
     assert metrics.net_income == pytest.approx(20.0)
     assert metrics.roe == pytest.approx(0.20)
     assert metrics.roa == pytest.approx(0.04)
-    assert metrics.net_income_cagr_5y == pytest.approx((20.0 / 10.0) ** (1 / 5) - 1)
     assert metrics.point_in_time_eligible is False
-    features = insurance_profitability_features(
+    assert insurance_profitability_features(
         _table(), susep_company_code="12345", fiscal_year=2025
-    )
-    assert features["roe"] == pytest.approx(0.20)
-    assert features["roa"] == pytest.approx(0.04)
-    assert features["net_income_cagr_5y"] == pytest.approx((20.0 / 10.0) ** (1 / 5) - 1)
+    ) == {"roe": pytest.approx(0.20), "roa": pytest.approx(0.04)}
 
 
-def test_profitability_allows_negative_net_income_but_growth_fails_closed() -> None:
+def test_profitability_allows_negative_net_income() -> None:
     metrics = _derive(_table(net_income=-10.0))
     assert metrics.roe == pytest.approx(-0.10)
     assert metrics.roa == pytest.approx(-0.02)
-    assert metrics.net_income_cagr_5y is None
 
 
-def test_growth_requires_all_six_consecutive_december_observations() -> None:
-    table = _table()
-    table = table.loc[
-        ~((table["damesano"] == 202212) & (table["cmpid"] == 518))
-    ].copy()
-    metrics = _derive(table)
-    assert metrics.roe == pytest.approx(0.20)
-    assert metrics.roa == pytest.approx(0.04)
-    assert metrics.net_income_cagr_5y is None
-
-
-def test_growth_requires_positive_full_history() -> None:
-    for invalid_value in (0.0, -1.0):
-        table = _table()
-        table.loc[
-            (table["damesano"] == 202212) & (table["cmpid"] == 518), "valor"
-        ] = invalid_value
-        assert _derive(table).net_income_cagr_5y is None
-
-
-def test_duplicate_net_income_fails_roe_roa_and_growth_closed() -> None:
+def test_duplicate_net_income_fails_roe_and_roa_closed() -> None:
     duplicate = pd.DataFrame(
         [{"coenti": 12345, "damesano": 202512, "cmpid": 518, "valor": 20.0}]
     )
@@ -80,7 +51,6 @@ def test_duplicate_net_income_fails_roe_roa_and_growth_closed() -> None:
     assert metrics.net_income is None
     assert metrics.roe is None
     assert metrics.roa is None
-    assert metrics.net_income_cagr_5y is None
 
 
 def test_missing_prior_equity_only_blocks_roe() -> None:
@@ -91,7 +61,6 @@ def test_missing_prior_equity_only_blocks_roe() -> None:
     metrics = _derive(table)
     assert metrics.roe is None
     assert metrics.roa == pytest.approx(0.04)
-    assert metrics.net_income_cagr_5y is not None
 
 
 def test_missing_prior_assets_only_blocks_roa() -> None:
@@ -132,10 +101,8 @@ def test_wrong_company_and_pre_contract_year_are_unknown() -> None:
     old_year = _derive(_table(), year=2013)
     assert wrong_company.roe is None
     assert wrong_company.roa is None
-    assert wrong_company.net_income_cagr_5y is None
     assert old_year.roe is None
     assert old_year.roa is None
-    assert old_year.net_income_cagr_5y is None
 
 
 def test_company_code_must_be_numeric() -> None:
