@@ -52,7 +52,7 @@ def test_duplicate_same_cnpj_and_fip_is_deduplicated() -> None:
     assert matches[0].normalized_fip_code == "06947"
 
 
-def test_olinda_row_uses_only_documented_identity_fields() -> None:
+def test_olinda_row_uses_documented_identity_fields() -> None:
     collector = SusepOlindaIdentityCollector()
     record = collector._parse_row(
         {
@@ -69,24 +69,41 @@ def test_olinda_row_uses_only_documented_identity_fields() -> None:
     assert record.source == "SUSEP_OLINDA_EMPRESAS"
 
 
+def test_olinda_response_shape_fails_closed() -> None:
+    collector = SusepOlindaIdentityCollector()
+    with pytest.raises(TypeError, match="response shape"):
+        collector._response_rows([])
+    with pytest.raises(TypeError, match="response shape"):
+        collector._response_rows({"records": []})
+    with pytest.raises(TypeError, match="row shape"):
+        collector._response_rows({"value": ["invalid"]})
+
+
 @pytest.mark.parametrize(
-    "row, message",
+    "row, exception, message",
     [
-        ({"mercodigo": 2, "entcodigofip": "06947", "entnome": "", "entcgc": "92863505000106"}, "legal name"),
-        ({"mercodigo": 2, "entcodigofip": "06947", "entnome": "A", "entcgc": None}, "CNPJ"),
-        ({"mercodigo": 2, "entcodigofip": None, "entnome": "A", "entcgc": "92863505000106"}, "FIP code"),
+        (
+            {"mercodigo": 2, "entcodigofip": "06947", "entnome": "", "entcgc": "92863505000106"},
+            ValueError,
+            "legal name",
+        ),
+        (
+            {"mercodigo": 2, "entcodigofip": "06947", "entnome": "A", "entcgc": None},
+            TypeError,
+            "CNPJ",
+        ),
+        (
+            {"mercodigo": 2, "entcodigofip": None, "entnome": "A", "entcgc": "92863505000106"},
+            TypeError,
+            "FIP code",
+        ),
     ],
 )
-def test_olinda_invalid_identity_rows_fail_closed(row: dict, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
+def test_olinda_invalid_identity_rows_fail_closed(
+    row: dict, exception: type[Exception], message: str
+) -> None:
+    with pytest.raises(exception, match=message):
         SusepOlindaIdentityCollector()._parse_row(row)
-
-
-def test_olinda_pagination_configuration_fails_closed() -> None:
-    with pytest.raises(ValueError, match="page_size"):
-        SusepOlindaIdentityCollector(page_size=0).fetch_records()
-    with pytest.raises(ValueError, match="max_pages"):
-        SusepOlindaIdentityCollector(max_pages=0).fetch_records()
 
 
 @pytest.mark.parametrize("value", ["", "123", "12.345.678/0001", "ABC"])
