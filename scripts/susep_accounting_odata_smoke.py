@@ -15,7 +15,8 @@ from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
 
 def run(output: Path) -> dict[str, object]:
     service = SusepAccountingODataService()
-    resource_names = service.fetch_resource_names()
+    catalog = service.fetch_resource_catalog()
+    resource_names = tuple(resource.name for resource in catalog)
     missing = sorted(set(VERIFIED_ACCOUNTING_RESOURCES) - set(resource_names))
     if missing:
         raise RuntimeError(
@@ -29,7 +30,10 @@ def run(output: Path) -> dict[str, object]:
         "service_root": SUSEP_ACCOUNTING_ODATA_ROOT,
         "documentation_url": SUSEP_ACCOUNTING_DOCUMENTATION_URL,
         "resource_count": len(resource_names),
-        "resource_names": list(resource_names),
+        "resources": [
+            {"name": resource.name, "url": resource.url}
+            for resource in catalog
+        ],
         "verified_canonical_resources": list(VERIFIED_ACCOUNTING_RESOURCES),
         "verified_canonical_resources_present": True,
         "documented_row_fields": [
