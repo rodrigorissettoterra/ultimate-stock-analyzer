@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -29,6 +30,34 @@ VERIFIED_ACCOUNTING_RESOURCES = (
 
 
 @dataclass(frozen=True, slots=True)
+class SusepAccountingResource:
+    """One exact entity-set entry from the official OData service document."""
+
+    name: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
+class SusepODataParameter:
+    """One exact parameter declared in the official OData metadata."""
+
+    name: str
+    type_name: str
+    nullable: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SusepODataCallable:
+    """Sanitized Function/FunctionImport signature from the OData metadata."""
+
+    kind: str
+    name: str
+    target: str | None
+    parameters: tuple[SusepODataParameter, ...] = ()
+    return_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SusepAccountingRow:
     """One official SUSEP accounting observation from the Olinda API."""
 
@@ -52,8 +81,8 @@ class SusepAccountingODataService:
     backoff_seconds: float = 2.0
     user_agent: str = "ultimate-stock-analyzer/0.2"
 
-    def fetch_resource_names(self) -> tuple[str, ...]:
-        """Return exact entity-set names exposed by the OData service document."""
+    def fetch_resource_catalog(self) -> tuple[SusepAccountingResource, ...]:
+        """Return exact resource names and URLs from the OData service document."""
 
         payload = self._get_json(self.service_root, params={"$format": "json"})
         if not isinstance(payload, dict):
@@ -62,7 +91,7 @@ class SusepAccountingODataService:
         if not isinstance(rows, list):
             raise TypeError("unexpected SUSEP accounting OData service-document shape")
 
-        names: set[str] = set()
+        resources: dict[str, SusepAccountingResource] = {}
         for row in rows:
             if not isinstance(row, dict):
                 raise TypeError("unexpected SUSEP accounting OData resource entry shape")
@@ -72,16 +101,87 @@ class SusepAccountingODataService:
                 raise TypeError("SUSEP accounting OData resource has invalid name")
             if not isinstance(url, str) or not url.strip():
                 raise TypeError("SUSEP accounting OData resource has invalid URL")
-            names.add(name.strip())
-        if not names:
+            normalized_name = name.strip()
+            normalized_url = url.strip()
+            existing = resources.get(normalized_name)
+            if existing is not None and existing.url != normalized_url:
+                raise ValueError("SUSEP accounting OData resource name has conflicting URLs")
+            resources[normalized_name] = SusepAccountingResource(
+                name=normalized_name,
+                url=normalized_url,
+            )
+        if not resources:
             raise ValueError("SUSEP accounting OData service exposed no resources")
-        return tuple(sorted(names))
+        return tuple(resources[name] for name in sorted(resources))
+
+    def fetch_resource_names(self) -> tuple[str, ...]:
+        """Return exact entity-set names exposed by the OData service document."""
+
+        return tuple(resource.name for resource in self.fetch_resource_catalog())
 
     def verified_resources_present(self) -> bool:
         """Return whether every empirically verified canonical resource is exposed."""
 
         names = set(self.fetch_resource_names())
         return set(VERIFIED_ACCOUNTING_RESOURCES).issubset(names)
+
+    def fetch_callable_catalog(self) -> tuple[SusepODataCallable, ...]:
+        """Read Function/FunctionImport signatures from official `$metadata` only."""
+
+        xml_text = self._get_text(f"{self.service_root}/$metadata", params={})
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise ValueError("invalid SUSEP accounting OData metadata XML") from exc
+
+        functions: dict[str, SusepODataCallable] = {}
+        imports: dict[str, SusepODataCallable] = {}
+        for element in root.iter():
+            tag = _local_name(element.tag)
+            if tag == "Function":
+                name = _required_xml_attr(element, "Name", "function")
+                parameters = tuple(
+                    SusepODataParameter(
+                        name=_required_xml_attr(child, "Name", "parameter"),
+                        type_name=_required_xml_attr(child, "Type", "parameter"),
+                        nullable=child.attrib.get("Nullable"),
+                    )
+                    for child in element
+                    if _local_name(child.tag) == "Parameter"
+                )
+                return_type = next(
+                    (
+                        child.attrib.get("Type")
+                        for child in element
+                        if _local_name(child.tag) == "ReturnType"
+                    ),
+                    None,
+                )
+                functions[name] = SusepODataCallable(
+                    kind="Function",
+                    name=name,
+                    target=None,
+                    parameters=parameters,
+                    return_type=return_type,
+                )
+            elif tag == "FunctionImport":
+                name = _required_xml_attr(element, "Name", "function import")
+                target = element.attrib.get("Function")
+                imports[name] = SusepODataCallable(
+                    kind="FunctionImport",
+                    name=name,
+                    target=target,
+                )
+
+        catalog = tuple(
+            sorted(
+                (*functions.values(), *imports.values()),
+                key=lambda item: (item.kind, item.name),
+            )
+        )
+        if not catalog:
+            raise ValueError("SUSEP accounting OData metadata exposed no callables")
+        return catalog
 
     def parse_accounting_row(self, row: dict[str, Any]) -> SusepAccountingRow:
         """Parse documented accounting fields without inferring financial semantics."""
@@ -100,20 +200,26 @@ class SusepAccountingODataService:
         if not isinstance(cmp_title, str) or not cmp_title.strip():
             raise ValueError("SUSEP accounting row has invalid CMP title")
 
-        normalized_cnpj = normalize_cnpj(cnpj)
-        parsed_month = _parse_reference_month(reference_month)
-        parsed_cmpid = _parse_cmpid(cmpid)
-        parsed_value = _parse_decimal(value)
         return SusepAccountingRow(
-            cnpj=normalized_cnpj,
+            cnpj=normalize_cnpj(cnpj),
             legal_name=legal_name.strip(),
-            reference_month=parsed_month,
-            cmpid=parsed_cmpid,
+            reference_month=_parse_reference_month(reference_month),
+            cmpid=_parse_cmpid(cmpid),
             cmp_title=cmp_title.strip(),
-            value=parsed_value,
+            value=_parse_decimal(value),
         )
 
     def _get_json(self, url: str, *, params: dict[str, Any]) -> Any:
+        response = self._request(url, params=params)
+        return response.json()
+
+    def _get_text(self, url: str, *, params: dict[str, Any]) -> str:
+        response = self._request(url, params=params)
+        if not response.text.strip():
+            raise ValueError("SUSEP accounting OData returned empty text response")
+        return response.text
+
+    def _request(self, url: str, *, params: dict[str, Any]) -> httpx.Response:
         if self.attempts < 1:
             raise ValueError("attempts must be positive")
         if self.timeout_seconds <= 0:
@@ -132,7 +238,7 @@ class SusepAccountingODataService:
                 try:
                     response = client.get(url, params=params)
                     response.raise_for_status()
-                    return response.json()
+                    return response
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
                     if status != 429 and status < 500:
@@ -147,6 +253,17 @@ class SusepAccountingODataService:
         if last_error is None:
             raise RuntimeError("SUSEP accounting OData request failed without an error")
         raise last_error
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _required_xml_attr(element: ET.Element, name: str, context: str) -> str:
+    value = element.attrib.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"SUSEP accounting OData {context} has invalid {name}")
+    return value.strip()
 
 
 def _parse_reference_month(value: Any) -> date:
