@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Iterable
 
 from ultimate_stock_analyzer.domain.master import SectorClassificationRecord
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
@@ -36,7 +36,15 @@ def profile_sector_model_coverage(
     sample_limit: int = 50,
 ) -> SectorCoverageReport:
     records = list(classifications)
-    unmapped = tuple(sorted(set(str(code).strip().upper() for code in unmapped_issuer_codes if str(code).strip())))
+    unmapped = tuple(
+        sorted(
+            {
+                str(code).strip().upper()
+                for code in unmapped_issuer_codes
+                if str(code).strip()
+            }
+        )
+    )
     if classification_rows < 0:
         raise ValueError("classification_rows must be non-negative")
     if len(unmapped) > classification_rows:
@@ -70,7 +78,9 @@ def profile_sector_model_coverage(
         classification_rows=classification_rows,
         identity_mapped_rows=mapped_rows,
         identity_unmapped_rows=len(unmapped),
-        identity_coverage=(mapped_rows / classification_rows if classification_rows else 0.0),
+        identity_coverage=(
+            mapped_rows / classification_rows if classification_rows else 0.0
+        ),
         normalized_companies=len(records),
         model_counts=dict(sorted(model_counts.items())),
         specialized_companies=specialized,
