@@ -80,7 +80,7 @@ def test_underwriting_requires_all_twelve_months() -> None:
     assert metrics.commercial_expense_ratio is None
 
 
-def test_underwriting_fails_closed_on_non_numeric_source_value() -> None:
+def test_invalid_claims_only_disable_loss_ratio() -> None:
     table = _full_year_rows()
     table["sinistro_ocorrido"] = table["sinistro_ocorrido"].astype(object)
     table.loc[0, "sinistro_ocorrido"] = "invalid"
@@ -93,10 +93,11 @@ def test_underwriting_fails_closed_on_non_numeric_source_value() -> None:
 
     assert metrics.complete_months is True
     assert metrics.loss_ratio is None
-    assert metrics.commercial_expense_ratio is None
+    assert metrics.annual_incurred_claims is None
+    assert metrics.commercial_expense_ratio == pytest.approx(0.20)
 
 
-def test_commercial_expense_ratio_fails_closed_on_invalid_expense() -> None:
+def test_invalid_commercial_expense_only_disables_commercial_ratio() -> None:
     table = _full_year_rows()
     table["desp_com"] = table["desp_com"].astype(object)
     table.loc[0, "desp_com"] = "invalid"
@@ -108,7 +109,38 @@ def test_commercial_expense_ratio_fails_closed_on_invalid_expense() -> None:
     )
 
     assert metrics.complete_months is True
+    assert metrics.loss_ratio == pytest.approx(0.60)
     assert metrics.commercial_expense_ratio is None
+    assert metrics.annual_commercial_expenses is None
+
+
+def test_missing_commercial_column_does_not_regress_verified_loss_ratio() -> None:
+    table = _full_year_rows().drop(columns=["desp_com"])
+
+    metrics = derive_susep_underwriting_metrics(
+        table,
+        susep_company_code="12345",
+        fiscal_year=2025,
+    )
+
+    assert metrics.loss_ratio == pytest.approx(0.60)
+    assert metrics.annual_incurred_claims == pytest.approx(1440.0)
+    assert metrics.commercial_expense_ratio is None
+    assert metrics.annual_commercial_expenses is None
+
+
+def test_missing_claims_column_does_not_disable_commercial_evidence() -> None:
+    table = _full_year_rows().drop(columns=["sinistro_ocorrido"])
+
+    metrics = derive_susep_underwriting_metrics(
+        table,
+        susep_company_code="12345",
+        fiscal_year=2025,
+    )
+
+    assert metrics.loss_ratio is None
+    assert metrics.annual_incurred_claims is None
+    assert metrics.commercial_expense_ratio == pytest.approx(0.20)
 
 
 def test_underwriting_fails_closed_on_non_positive_denominator_or_negative_values() -> None:
@@ -145,10 +177,10 @@ def test_underwriting_does_not_mix_pre_current_susep_definition_years() -> None:
     assert metrics.complete_months is False
 
 
-def test_underwriting_requires_exact_official_columns_and_numeric_company_code() -> None:
-    table = _full_year_rows().drop(columns=["desp_com"])
+def test_underwriting_requires_common_columns_and_numeric_company_code() -> None:
+    table = _full_year_rows().drop(columns=["premio_ganho"])
 
-    with pytest.raises(ValueError, match="desp_com"):
+    with pytest.raises(ValueError, match="premio_ganho"):
         derive_susep_underwriting_metrics(
             table,
             susep_company_code="12345",
