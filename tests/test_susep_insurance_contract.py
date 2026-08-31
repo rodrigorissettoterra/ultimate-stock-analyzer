@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 from io import BytesIO
+from typing import Self
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import httpx
@@ -46,7 +47,7 @@ def test_susep_download_retries_transient_connection_failure(monkeypatch: pytest
         def __init__(self, **_: object) -> None:
             pass
 
-        def __enter__(self) -> "FakeClient":
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_: object) -> None:
@@ -75,7 +76,7 @@ def test_susep_download_fails_closed_after_retry_exhaustion(
         def __init__(self, **_: object) -> None:
             pass
 
-        def __enter__(self) -> "FailingClient":
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_: object) -> None:
