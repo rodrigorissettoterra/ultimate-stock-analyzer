@@ -94,8 +94,10 @@ def derive_susep_underwriting_metrics(
     annual_earned = float(earned.sum())
     annual_earned_value = annual_earned if isfinite(annual_earned) else None
 
-    annual_claims = _optional_annual_sum(selected, _LOSS_COLUMN)
-    annual_commercial = _optional_annual_sum(selected, _COMMERCIAL_EXPENSE_COLUMN)
+    annual_claims = _nonnegative_value(_optional_annual_sum(selected, _LOSS_COLUMN))
+    annual_commercial = _nonnegative_value(
+        _optional_annual_sum(selected, _COMMERCIAL_EXPENSE_COLUMN)
+    )
     annual_administrative = (
         _administrative_expense_from_accounting(
             accounting_table,
@@ -204,6 +206,12 @@ def _optional_annual_sum(table: pd.DataFrame, column: str) -> float | None:
         return None
     annual = float(values.sum())
     return annual if isfinite(annual) else None
+
+
+def _nonnegative_value(value: float | None) -> float | None:
+    if value is None or value < 0.0:
+        return None
+    return value
 
 
 def _administrative_expense_from_accounting(
