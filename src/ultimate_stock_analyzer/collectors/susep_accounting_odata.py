@@ -104,6 +104,50 @@ class SusepAccountingODataService:
         names = set(self.fetch_resource_names())
         return set(VERIFIED_ACCOUNTING_RESOURCES).issubset(names)
 
+    def fetch_year_rows(
+        self,
+        resource: str,
+        *,
+        year: int,
+        top: int | None = None,
+    ) -> tuple[SusepAccountingRow, ...]:
+        """Fetch one documented year-scoped accounting resource.
+
+        SUSEP documents `Ano` as the required resource parameter. Olinda parameterized
+        resources use the OData function form `Resource(Ano=@Ano)` with the alias
+        supplied as `@Ano='YYYY'`. Optional `$top` is used only to bound smoke queries;
+        production callers must explicitly decide whether complete pagination is needed.
+        """
+
+        if resource not in VERIFIED_ACCOUNTING_RESOURCES:
+            raise ValueError("unverified SUSEP accounting resource")
+        if year < 1999 or year > 2100:
+            raise ValueError("year is outside supported SUSEP accounting range")
+        if top is not None and top < 1:
+            raise ValueError("top must be positive")
+
+        url = f"{self.service_root}/{resource}(Ano=@Ano)"
+        params: dict[str, Any] = {
+            "@Ano": f"'{year}'",
+            "$format": "json",
+        }
+        if top is not None:
+            params["$top"] = top
+
+        payload = self._get_json(url, params=params)
+        rows = self._response_rows(payload)
+        return tuple(self.parse_accounting_row(row) for row in rows)
+
+    def _response_rows(self, payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            raise TypeError("unexpected SUSEP accounting OData response shape")
+        rows = payload.get("value")
+        if not isinstance(rows, list):
+            raise TypeError("unexpected SUSEP accounting OData response shape")
+        if not all(isinstance(row, dict) for row in rows):
+            raise TypeError("unexpected SUSEP accounting OData row shape")
+        return rows
+
     def parse_accounting_row(self, row: dict[str, Any]) -> SusepAccountingRow:
         """Parse documented accounting fields without inferring financial semantics."""
 
