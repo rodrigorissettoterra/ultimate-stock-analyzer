@@ -5,7 +5,51 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+import pandas as pd
+
 from ultimate_stock_analyzer.collectors.susep_ses import SusepSesCollector
+
+_ACCOUNTING_FIELD_CANDIDATES = (542, 4069)
+_FIELD_DICTIONARY_COLUMNS = (
+    "nuitem",
+    "noitem",
+    "nuquad",
+    "mercado",
+    "inivigencia",
+    "fimvigencia",
+)
+
+
+def _candidate_accounting_field_evidence(table: pd.DataFrame) -> dict[str, object]:
+    missing = [column for column in _FIELD_DICTIONARY_COLUMNS if column not in table.columns]
+    if missing:
+        raise ValueError(
+            "missing required SUSEP Ses_campos columns: " + ", ".join(missing)
+        )
+
+    item_ids = pd.to_numeric(table["nuitem"], errors="coerce")
+    evidence: dict[str, object] = {}
+    for candidate in _ACCOUNTING_FIELD_CANDIDATES:
+        selected = table.loc[item_ids == candidate, list(_FIELD_DICTIONARY_COLUMNS)].copy()
+        rows: list[dict[str, object]] = []
+        for _, row in selected.iterrows():
+            rows.append(
+                {
+                    column: None if pd.isna(row[column]) else str(row[column]).strip()
+                    for column in _FIELD_DICTIONARY_COLUMNS
+                }
+            )
+        evidence[str(candidate)] = {
+            "present": bool(rows),
+            "rows": rows,
+        }
+
+    return {
+        "source_table": "Ses_campos.csv",
+        "candidate_ids": list(_ACCOUNTING_FIELD_CANDIDATES),
+        "semantics_promoted": False,
+        "fields": evidence,
+    }
 
 
 def run(output: Path) -> dict[str, object]:
@@ -22,6 +66,9 @@ def run(output: Path) -> dict[str, object]:
         }
 
     manifest["all_tables"] = all_tables
+    manifest["accounting_field_candidates"] = _candidate_accounting_field_evidence(
+        collector.read_table(archive, "Ses_campos.csv")
+    )
     manifest["generated_at"] = datetime.now(UTC).isoformat()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
@@ -35,8 +82,8 @@ def run(output: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect official SUSEP SES table schemas without persisting raw data. "
-            "The sanitized manifest records filenames and headers only."
+            "Inspect official SUSEP SES schemas and selected field-dictionary evidence "
+            "without persisting raw financial data."
         )
     )
     parser.add_argument("--output", default="./susep-schema-artifacts/schema_manifest.json")
