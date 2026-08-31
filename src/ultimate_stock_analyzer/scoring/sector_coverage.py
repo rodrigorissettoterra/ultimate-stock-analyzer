@@ -5,6 +5,9 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
 from ultimate_stock_analyzer.domain.master import SectorClassificationRecord
+from ultimate_stock_analyzer.scoring.applicability_review import (
+    StructuralApplicabilityReviewRegistry,
+)
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 
@@ -36,6 +39,13 @@ class SectorCoverageReport:
     fallback_company_samples_by_segment: dict[
         str, tuple[SectorCoverageCompanySample, ...]
     ]
+    applicability_review_version: str | None
+    applicability_review_effect: str | None
+    reviewed_fallback_companies: int
+    review_status_counts: dict[str, int]
+    review_company_ids_by_status: dict[str, tuple[str, ...]]
+    review_non_fallback_company_ids: tuple[str, ...]
+    review_unmatched_company_ids: tuple[str, ...]
     ambiguous_specialized_matches: int
     outside_active_company_catalog_issuer_codes: tuple[str, ...]
     verified_non_equity_issuer_codes: tuple[str, ...]
@@ -65,6 +75,7 @@ def profile_sector_model_coverage(
     classification_rows: int,
     outside_active_company_catalog_issuer_codes: Iterable[str] = (),
     verified_non_equity_issuer_codes: Iterable[str] = (),
+    applicability_review_registry: StructuralApplicabilityReviewRegistry | None = None,
     sample_limit: int = 50,
     fallback_sample_limit: int = 5,
 ) -> SectorCoverageReport:
@@ -87,6 +98,11 @@ def profile_sector_model_coverage(
     if fallback_sample_limit < 0:
         raise ValueError("fallback_sample_limit must be non-negative")
 
+    review_by_company = (
+        applicability_review_registry.by_company_id
+        if applicability_review_registry is not None
+        else {}
+    )
     model_counts: Counter[str] = Counter()
     fallback_by_sector: Counter[str] = Counter()
     fallback_by_subsector: Counter[str] = Counter()
@@ -96,8 +112,13 @@ def profile_sector_model_coverage(
     fallback_companies_by_segment: defaultdict[
         str, set[SectorCoverageCompanySample]
     ] = defaultdict(set)
+    review_status_counts: Counter[str] = Counter()
+    review_company_ids_by_status: defaultdict[str, set[str]] = defaultdict(set)
+    normalized_company_ids: set[str] = set()
+    fallback_company_ids: set[str] = set()
     ambiguous: list[str] = []
     for record in records:
+        normalized_company_ids.add(record.company_id)
         row = {
             "sector": record.sector,
             "subsector": record.subsector,
@@ -107,6 +128,7 @@ def profile_sector_model_coverage(
         selection = registry.select(row)
         model_counts[selection.model_id] += 1
         if selection.model_id == registry.default_model.model_id:
+            fallback_company_ids.add(record.company_id)
             subsector_key = f"{record.sector} / {record.subsector}"
             segment_key = f"{record.sector} / {record.subsector} / {record.segment}"
             fallback_by_sector[record.sector] += 1
@@ -122,6 +144,10 @@ def profile_sector_model_coverage(
                         company_id=record.company_id,
                     )
                 )
+            review = review_by_company.get(record.company_id)
+            if review is not None:
+                review_status_counts[review.status] += 1
+                review_company_ids_by_status[review.status].add(record.company_id)
         matches = [
             model.model_id
             for model in registry.models
@@ -146,6 +172,11 @@ def profile_sector_model_coverage(
         key: tuple(sorted(companies))[:fallback_sample_limit]
         for key, companies in sorted(fallback_companies_by_segment.items())
     }
+    reviewed_company_ids = set(review_by_company)
+    review_non_fallback = tuple(
+        sorted((reviewed_company_ids & normalized_company_ids) - fallback_company_ids)
+    )
+    review_unmatched = tuple(sorted(reviewed_company_ids - normalized_company_ids))
     return SectorCoverageReport(
         classification_rows=classification_rows,
         company_catalog_mapped_rows=mapped_rows,
@@ -169,6 +200,24 @@ def profile_sector_model_coverage(
         fallback_issuer_samples_by_subsector=fallback_subsector_samples,
         fallback_issuer_samples_by_segment=fallback_segment_samples,
         fallback_company_samples_by_segment=fallback_company_samples,
+        applicability_review_version=(
+            applicability_review_registry.version
+            if applicability_review_registry is not None
+            else None
+        ),
+        applicability_review_effect=(
+            applicability_review_registry.effect
+            if applicability_review_registry is not None
+            else None
+        ),
+        reviewed_fallback_companies=sum(review_status_counts.values()),
+        review_status_counts=dict(sorted(review_status_counts.items())),
+        review_company_ids_by_status={
+            key: tuple(sorted(company_ids))[:sample_limit]
+            for key, company_ids in sorted(review_company_ids_by_status.items())
+        },
+        review_non_fallback_company_ids=review_non_fallback[:sample_limit],
+        review_unmatched_company_ids=review_unmatched[:sample_limit],
         ambiguous_specialized_matches=len(ambiguous),
         outside_active_company_catalog_issuer_codes=outside_catalog[:sample_limit],
         verified_non_equity_issuer_codes=verified_exclusions[:sample_limit],
