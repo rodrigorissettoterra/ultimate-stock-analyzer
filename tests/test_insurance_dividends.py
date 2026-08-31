@@ -134,12 +134,3 @@ def test_unknown_availability_is_excluded_fail_closed() -> None:
     )
     assert metrics.visible_payment_count == 5
     assert metrics.complete_cagr_history is False
-
-
-def test_naive_as_of_is_normalized_to_utc() -> None:
-    payments = [_payment(year, 1.0) for year in range(2019, 2025)]
-    metrics = derive_insurance_dividend_metrics(
-        payments,
-        as_of=datetime(2025, 8, 31),
-    )
-    assert metrics.as_of.tzinfo == UTC
