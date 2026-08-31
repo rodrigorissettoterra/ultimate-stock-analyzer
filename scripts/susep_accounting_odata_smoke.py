@@ -8,6 +8,7 @@ from pathlib import Path
 from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
     SUSEP_ACCOUNTING_DOCUMENTATION_URL,
     SUSEP_ACCOUNTING_ODATA_ROOT,
+    VERIFIED_ACCOUNTING_RESOURCES,
     SusepAccountingODataService,
 )
 
@@ -15,6 +16,13 @@ from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
 def run(output: Path) -> dict[str, object]:
     service = SusepAccountingODataService()
     resource_names = service.fetch_resource_names()
+    missing = sorted(set(VERIFIED_ACCOUNTING_RESOURCES) - set(resource_names))
+    if missing:
+        raise RuntimeError(
+            "official SUSEP accounting OData service is missing verified resources: "
+            + ", ".join(missing)
+        )
+
     manifest: dict[str, object] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": "SUSEP_OLINDA_ACCOUNTING",
@@ -22,6 +30,8 @@ def run(output: Path) -> dict[str, object]:
         "documentation_url": SUSEP_ACCOUNTING_DOCUMENTATION_URL,
         "resource_count": len(resource_names),
         "resource_names": list(resource_names),
+        "verified_canonical_resources": list(VERIFIED_ACCOUNTING_RESOURCES),
+        "verified_canonical_resources_present": True,
         "documented_row_fields": [
             "entnome",
             "cnpj",
