@@ -9,11 +9,19 @@ from ultimate_stock_analyzer.collectors.b3_classification import (
     B3_CLASSIFICATION_APP_URL,
     B3IndustryClassificationCollector,
 )
+from ultimate_stock_analyzer.collectors.cvm_foreign import CVMForeignIssuerCollector
+from ultimate_stock_analyzer.orchestration.cvm_ingestion import CVMIngestionService
 from ultimate_stock_analyzer.scoring.applicability_review import (
     load_structural_applicability_reviews,
 )
 from ultimate_stock_analyzer.scoring.sector_coverage import profile_sector_model_coverage
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
+from ultimate_stock_analyzer.universe.b3_partition import (
+    partition_current_b3_classifications,
+)
+from ultimate_stock_analyzer.universe.eligibility import (
+    classify_brazilian_equity_issuers,
+)
 
 DEFAULT_EXCLUSIONS = "config/universe/b3_non_equity_issuer_exclusions_v0.1.json"
 DEFAULT_APPLICABILITY_REVIEWS = (
@@ -87,7 +95,8 @@ def main() -> None:
     applicability_reviews = load_structural_applicability_reviews(
         args.applicability_reviews
     )
-    report = profile_sector_model_coverage(
+
+    raw_report = profile_sector_model_coverage(
         normalized,
         registry=registry,
         classification_rows=len(workbook_rows),
@@ -98,6 +107,32 @@ def main() -> None:
         applicability_review_registry=applicability_reviews,
     )
 
+    domestic_issuers = CVMIngestionService().load_issuer_master(
+        collected_at=collected_at,
+        active_only=False,
+    )
+    foreign_issuers = CVMForeignIssuerCollector().collect(
+        collected_at=collected_at
+    )
+    eligibility = classify_brazilian_equity_issuers(
+        (record.company_id for record in normalized),
+        brazilian_public_company_ids=(
+            issuer.company_id for issuer in domestic_issuers
+        ),
+        foreign_issuer_company_ids=(
+            issuer.company_id for issuer in foreign_issuers
+        ),
+    )
+    eligible_records, partition_report = partition_current_b3_classifications(
+        normalized,
+        eligibility_report=eligibility,
+    )
+    eligible_model_report = profile_sector_model_coverage(
+        eligible_records,
+        registry=registry,
+        classification_rows=len(eligible_records),
+    )
+
     payload = {
         "generated_at": collected_at.isoformat(),
         "source": "B3_LISTED_COMPANIES",
@@ -105,17 +140,25 @@ def main() -> None:
         "registry_version": registry.version,
         "non_equity_exclusions_version": exclusions_version,
         "structural_applicability_review_version": applicability_reviews.version,
+        "jurisdiction_source_contracts": [
+            "CVM_CAD",
+            "CVM_FOREIGN_ISSUER_CAD",
+        ],
         "point_in_time_eligible": False,
-        "report": report.to_dict(),
+        "report": raw_report.to_dict(),
+        "current_brazilian_equity_universe": partition_report.to_dict(),
+        "eligible_brazilian_equity_model_coverage": eligible_model_report.to_dict(),
         "notes": [
-            "Artifact contains aggregates and bounded public issuer identifiers only; no raw B3 workbook/catalog is persisted.",
+            "Artifact contains aggregates and bounded public issuer identifiers only; no raw B3 workbook/catalog or CVM registry is persisted.",
+            "The top-level report preserves the raw mapped B3 classification/model view for audit continuity.",
             "company_catalog_join_coverage measures official classification workbook rows that resolve to an active official company-catalog identity; it is not claimed as the full equity-universe denominator.",
-            "equity_candidate_identity_coverage excludes only explicitly audited non-equity/non-exchange-equity issuer rows and still is not a full B3 equity-universe denominator.",
+            "equity_candidate_identity_coverage excludes only explicitly audited non-equity/non-exchange-equity issuer rows and still is not the jurisdiction-filtered Brazilian-company universe denominator.",
+            "current_brazilian_equity_universe partitions mapped B3 canonical CVM identities by separate official CVM Brazilian-public-company and foreign-issuer registries.",
+            "eligible_brazilian_equity_model_coverage profiles only current Brazilian-company-eligible classification records; foreign, conflicting and unresolved identities remain visible in the partition audit instead of being silently dropped.",
             "Unresolved outside-catalog rows remain visible and are never guessed into an issuer identity.",
             "general_corporate fallback is valid but its sector/subsector distribution is reported for economic-model review.",
             "Structural applicability review statuses are diagnostic_only and do not alter model routing, score, rankability, weights or thresholds.",
-            "review_non_fallback_company_ids exposes stale review entries if a reviewed issuer later routes to a specialized model.",
-            "review_unmatched_company_ids exposes reviewed canonical CVM identities absent from the current B3 classification snapshot.",
+            "Current B3 sector and CVM jurisdiction registries are current-state evidence and are not point-in-time eligible for historical backtests.",
             "ambiguous_specialized_matches flags rows matching more than one specialized model and requires rule review.",
         ],
     }
