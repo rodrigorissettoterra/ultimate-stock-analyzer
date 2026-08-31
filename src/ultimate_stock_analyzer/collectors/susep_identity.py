@@ -83,61 +83,41 @@ def matched_susep_fip_codes(
 class SusepOlindaIdentityCollector:
     """Read official SUSEP Olinda entity identity data without fuzzy matching.
 
-    The official service documents `entcodigofip`, `entnome` and `entcgc` as Código
-    FIP, legal name and CNPJ. The collector pages through those public fields, validates
-    every returned identity row and leaves issuer matching to the exact-CNPJ contract
-    above. It never searches by company name or ticker.
+    SUSEP documents `entcodigofip`, `entnome` and `entcgc` as Código FIP, legal name
+    and CNPJ. The regulator/Open Insurance references the complete `DadosCadastrais`
+    JSON endpoint directly, so the collector deliberately uses that verified request
+    shape and performs exact matching locally rather than constructing name filters.
     """
 
     endpoint: str = SUSEP_OLINDA_IDENTITY_URL
     timeout_seconds: float = 30.0
-    page_size: int = 500
-    max_pages: int = 20
     user_agent: str = "ultimate-stock-analyzer/0.2"
 
     def fetch_records(self) -> tuple[SusepLicensedEntityRecord, ...]:
-        if self.page_size < 1:
-            raise ValueError("page_size must be positive")
-        if self.max_pages < 1:
-            raise ValueError("max_pages must be positive")
-
-        records: list[SusepLicensedEntityRecord] = []
         with httpx.Client(
             timeout=self.timeout_seconds,
             follow_redirects=True,
             headers={"User-Agent": self.user_agent},
         ) as client:
-            for page in range(self.max_pages):
-                rows = self._fetch_page(client, skip=page * self.page_size)
-                records.extend(self._parse_row(row) for row in rows)
-                if len(rows) < self.page_size:
-                    return tuple(records)
-
-        raise RuntimeError("SUSEP Olinda identity pagination exceeded max_pages")
+            response = client.get(self.endpoint, params={"$format": "json"})
+        response.raise_for_status()
+        payload = response.json()
+        rows = self._response_rows(payload)
+        return tuple(self._parse_row(row) for row in rows)
 
     def fetch_by_cnpj(self, issuer_cnpj: str) -> tuple[SusepLicensedEntityRecord, ...]:
         """Fetch the public registry and return exact CNPJ matches only."""
 
         return match_susep_entities_by_cnpj(issuer_cnpj, self.fetch_records())
 
-    def _fetch_page(self, client: httpx.Client, *, skip: int) -> list[dict[str, Any]]:
-        response = client.get(
-            self.endpoint,
-            params={
-                "$format": "json",
-                "$select": "mercodigo,entcodigofip,entnome,entcgc",
-                "$orderby": "entcodigofip asc",
-                "$skip": skip,
-                "$top": self.page_size,
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict) or not isinstance(payload.get("value"), list):
-            raise ValueError("unexpected SUSEP Olinda identity response shape")
-        rows = payload["value"]
+    def _response_rows(self, payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            raise TypeError("unexpected SUSEP Olinda identity response shape")
+        rows = payload.get("value")
+        if not isinstance(rows, list):
+            raise TypeError("unexpected SUSEP Olinda identity response shape")
         if not all(isinstance(row, dict) for row in rows):
-            raise ValueError("unexpected SUSEP Olinda identity row shape")
+            raise TypeError("unexpected SUSEP Olinda identity row shape")
         return rows
 
     def _parse_row(self, row: dict[str, Any]) -> SusepLicensedEntityRecord:
@@ -145,12 +125,14 @@ class SusepOlindaIdentityCollector:
         cnpj = row.get("entcgc")
         fip_code = row.get("entcodigofip")
         market_code = row.get("mercodigo")
-        if not isinstance(name, str) or not name.strip():
-            raise ValueError("SUSEP Olinda identity row has invalid legal name")
+        if not isinstance(name, str):
+            raise TypeError("SUSEP Olinda identity row has invalid legal name")
+        if not name.strip():
+            raise ValueError("SUSEP Olinda identity row has empty legal name")
         if not isinstance(cnpj, str):
-            raise ValueError("SUSEP Olinda identity row has invalid CNPJ")
+            raise TypeError("SUSEP Olinda identity row has invalid CNPJ")
         if not isinstance(fip_code, str):
-            raise ValueError("SUSEP Olinda identity row has invalid FIP code")
+            raise TypeError("SUSEP Olinda identity row has invalid FIP code")
 
         normalized_cnpj = normalize_cnpj(cnpj)
         normalized_fip = normalize_fip_code(fip_code)
