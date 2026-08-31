@@ -66,6 +66,7 @@ def test_loss_ratio_requires_all_twelve_months() -> None:
 
 def test_loss_ratio_fails_closed_on_non_numeric_source_value() -> None:
     table = _full_year_rows()
+    table["sinistro_ocorrido"] = table["sinistro_ocorrido"].astype(object)
     table.loc[0, "sinistro_ocorrido"] = "invalid"
 
     metrics = derive_susep_loss_ratio(
