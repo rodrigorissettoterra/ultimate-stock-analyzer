@@ -10,7 +10,9 @@ on:
       - "scripts/susep_schema_manifest.py"
       - "scripts/susep_documentation_manifest.py"
       - "src/ultimate_stock_analyzer/collectors/susep_ses.py"
+      - "src/ultimate_stock_analyzer/collectors/susep_field_dictionary.py"
       - "tests/test_susep_insurance_contract.py"
+      - "tests/test_susep_profitability_field_evidence.py"
 
 permissions:
   contents: read
