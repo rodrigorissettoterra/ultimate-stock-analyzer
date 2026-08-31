@@ -8,7 +8,7 @@ Measure, with current official B3 classification data, how completely the indust
 
 The profiler reuses the existing B3 industry-classification collector. The official classification workbook is joined to the official company catalog through the exact B3 issuer code, which in turn provides CVM code and CNPJ. Normalized identity remains `company_id = cvm:<CD_CVM>`; no ticker/name/fuzzy matching is introduced.
 
-The downloaded workbook and company catalog are processed in memory and are not committed or uploaded as artifacts. The workflow artifact contains only aggregate counts plus bounded public issuer/company identifiers for unresolved or ambiguous cases.
+The downloaded workbook and company catalog are processed in memory and are not committed or uploaded as artifacts. The workflow artifact contains only aggregate counts plus bounded public issuer/company identifiers for unresolved, ambiguous, or fallback-audit cases.
 
 ## Measures
 
@@ -25,6 +25,7 @@ The manifest reports:
 - company count by selected sector model;
 - specialized-model versus `general_corporate` fallback counts;
 - `general_corporate` fallback distribution by sector and subsector;
+- up to five sorted issuer-code samples for each fallback sector/subsector bucket;
 - specialized-model routing coverage;
 - rows matching more than one specialized model rule;
 - bounded samples of outside-catalog issuer codes and ambiguous company IDs.
@@ -33,7 +34,7 @@ The raw join ratio is deliberately **not** labeled as complete B3 equity-univers
 
 `equity_candidate_identity_coverage` removes only issuer rows present in the audited exclusion registry. It answers whether the remaining classification rows resolve to the active company catalog; it still does **not** establish a complete B3 equity-universe denominator.
 
-`general_corporate` is the registry's intentional default model, so fallback is not treated as an error. Its sector/subsector distribution is reported to support an economic review of whether any structurally different business should receive a specialized model.
+`general_corporate` is the registry's intentional default model, so fallback is not treated as an error. Its sector/subsector distribution and bounded issuer-code samples are reported to support an economic review of whether any structurally different business should receive a specialized model. The samples are diagnostic only: they never alter routing or scoring.
 
 ## Audited outside-catalog rows — 2026-08-31
 
