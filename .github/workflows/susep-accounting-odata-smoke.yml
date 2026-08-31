@@ -1,0 +1,36 @@
+name: susep-accounting-odata-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 11 * * 0"
+  pull_request:
+    paths:
+      - ".github/workflows/susep-accounting-odata-smoke.yml"
+      - "scripts/susep_accounting_odata_smoke.py"
+      - "src/ultimate_stock_analyzer/collectors/susep_accounting_odata.py"
+      - "tests/test_susep_accounting_odata.py"
+
+permissions:
+  contents: read
+
+jobs:
+  accounting-odata-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e .
+      - name: Inspect official SUSEP accounting OData service
+        run: python scripts/susep_accounting_odata_smoke.py --output susep-accounting-artifacts/service_manifest.json
+      - name: Upload sanitized service metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: susep-accounting-odata-manifest
+          path: susep-accounting-artifacts/service_manifest.json
+          if-no-files-found: error
+          retention-days: 14
