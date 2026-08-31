@@ -1,7 +1,9 @@
 import pandas as pd
 import pytest
 
-from scripts.susep_schema_manifest import _candidate_accounting_field_evidence
+from ultimate_stock_analyzer.collectors.susep_field_dictionary import (
+    candidate_accounting_field_evidence,
+)
 
 
 def test_candidate_accounting_field_evidence_is_exact_and_sanitized() -> None:
@@ -34,7 +36,7 @@ def test_candidate_accounting_field_evidence_is_exact_and_sanitized() -> None:
         ]
     )
 
-    manifest = _candidate_accounting_field_evidence(table)
+    manifest = candidate_accounting_field_evidence(table)
 
     assert manifest["semantics_promoted"] is False
     assert manifest["candidate_ids"] == [542, 4069]
@@ -49,4 +51,4 @@ def test_candidate_accounting_field_evidence_requires_exact_dictionary_schema() 
     table = pd.DataFrame([{"nuitem": 542, "noitem": "Despesas Administrativas"}])
 
     with pytest.raises(ValueError, match="nuquad"):
-        _candidate_accounting_field_evidence(table)
+        candidate_accounting_field_evidence(table)
