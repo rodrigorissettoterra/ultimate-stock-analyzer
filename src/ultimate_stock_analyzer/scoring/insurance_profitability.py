@@ -10,7 +10,6 @@ _NET_INCOME_CMPID = 518
 _TOTAL_ASSETS_CMPID = 1039
 _EQUITY_CMPID = 3333
 _CURRENT_ACCOUNTING_ERA_START = 2014
-_GROWTH_YEARS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +25,6 @@ class InsuranceProfitabilityMetrics:
     prior_total_assets: float | None
     roe: float | None
     roa: float | None
-    net_income_cagr_5y: float | None
     point_in_time_eligible: bool = False
     source: str = "SUSEP_SES_DERIVED"
 
@@ -37,13 +35,12 @@ def derive_susep_profitability_metrics(
     susep_company_code: str,
     fiscal_year: int,
 ) -> InsuranceProfitabilityMetrics:
-    """Derive year-end insurer ROE, ROA and strict five-year net-income growth.
+    """Derive year-end insurer ROE and ROA from exact SUSEP CMPIDs.
 
     Annual net income is the December YTD observation, never a sum of monthly
-    cumulative observations. ROE and ROA use average prior/current December balance
-    snapshots. Five-year growth requires six consecutive positive December net-income
-    observations with no interpolation. Missing, duplicate or non-numeric evidence
-    fails closed.
+    cumulative observations. Balance-sheet fields are point-in-time values: ROE and
+    ROA use average current/prior December snapshots. Missing, duplicate or nonnumeric
+    evidence fails closed.
     """
 
     _require_columns(table)
@@ -79,9 +76,6 @@ def derive_susep_profitability_metrics(
         prior_total_assets=prior_assets,
         roe=_return_on_average_balance(net_income, prior_equity, current_equity),
         roa=_return_on_average_balance(net_income, prior_assets, current_assets),
-        net_income_cagr_5y=_net_income_cagr_5y(
-            table, company_code=code, fiscal_year=fiscal_year
-        ),
     )
 
 
@@ -91,16 +85,12 @@ def insurance_profitability_features(
     susep_company_code: str,
     fiscal_year: int,
 ) -> dict[str, float | None]:
-    """Return verified score-facing insurer profitability and growth features."""
+    """Return verified score-facing insurer profitability features."""
 
     metrics = derive_susep_profitability_metrics(
         table, susep_company_code=susep_company_code, fiscal_year=fiscal_year
     )
-    return {
-        "roe": metrics.roe,
-        "roa": metrics.roa,
-        "net_income_cagr_5y": metrics.net_income_cagr_5y,
-    }
+    return {"roe": metrics.roe, "roa": metrics.roa}
 
 
 def _require_columns(table: pd.DataFrame) -> None:
@@ -139,33 +129,6 @@ def _exact_value(
     return value if isfinite(value) else None
 
 
-def _net_income_cagr_5y(
-    table: pd.DataFrame, *, company_code: int, fiscal_year: int
-) -> float | None:
-    start_year = fiscal_year - _GROWTH_YEARS
-    if start_year < _CURRENT_ACCOUNTING_ERA_START:
-        return None
-
-    observations: list[float] = []
-    for year in range(start_year, fiscal_year + 1):
-        value = _exact_value(
-            table,
-            company_code=company_code,
-            period=year * 100 + 12,
-            cmpid=_NET_INCOME_CMPID,
-        )
-        if value is None:
-            return None
-        observations.append(value)
-
-    if any(value <= 0.0 for value in observations):
-        return None
-    beginning = observations[0]
-    ending = observations[-1]
-    result = (ending / beginning) ** (1.0 / _GROWTH_YEARS) - 1.0
-    return result if isfinite(result) else None
-
-
 def _return_on_average_balance(
     net_income: float | None,
     beginning_balance: float | None,
@@ -193,5 +156,4 @@ def _unknown(susep_company_code: str, fiscal_year: int) -> InsuranceProfitabilit
         prior_total_assets=None,
         roe=None,
         roa=None,
-        net_income_cagr_5y=None,
     )
