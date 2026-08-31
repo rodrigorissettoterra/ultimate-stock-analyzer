@@ -83,18 +83,43 @@ def test_sector_coverage_profiles_catalog_join_and_model_assignment() -> None:
         registry=_registry(),
         classification_rows=4,
         outside_active_company_catalog_issuer_codes=("CRI1",),
+        verified_non_equity_issuer_codes=("CRI1",),
     )
 
     assert report.classification_rows == 4
     assert report.company_catalog_mapped_rows == 3
     assert report.company_catalog_unmapped_rows == 1
     assert report.company_catalog_join_coverage == 0.75
+    assert report.verified_non_equity_exclusions == 1
+    assert report.unresolved_outside_catalog_rows == 0
+    assert report.equity_candidate_identity_coverage == 1.0
     assert report.outside_active_company_catalog_issuer_codes == ("CRI1",)
+    assert report.verified_non_equity_issuer_codes == ("CRI1",)
+    assert report.unresolved_outside_catalog_issuer_codes == ()
     assert report.normalized_companies == 3
     assert report.model_counts == {"banks": 1, "general_corporate": 1, "utilities": 1}
     assert report.specialized_companies == 2
     assert report.fallback_companies == 1
     assert report.specialized_coverage == 2 / 3
+    assert report.fallback_by_sector == {"Consumo": 1}
+    assert report.fallback_by_subsector == {"Consumo / Comércio": 1}
+
+
+def test_sector_coverage_keeps_unknown_outside_catalog_rows_unresolved() -> None:
+    report = profile_sector_model_coverage(
+        [_record("cvm:1", "BANK", sector="Financeiro", subsector="X", segment="Bancos")],
+        registry=_registry(),
+        classification_rows=3,
+        outside_active_company_catalog_issuer_codes=("CEPAC", "MISSING"),
+        verified_non_equity_issuer_codes=("CEPAC", "STALE"),
+    )
+
+    assert report.company_catalog_mapped_rows == 1
+    assert report.verified_non_equity_exclusions == 1
+    assert report.unresolved_outside_catalog_rows == 1
+    assert report.equity_candidate_identity_coverage == 0.5
+    assert report.verified_non_equity_issuer_codes == ("CEPAC",)
+    assert report.unresolved_outside_catalog_issuer_codes == ("MISSING",)
 
 
 def test_sector_coverage_reports_overlapping_specialized_rules() -> None:
