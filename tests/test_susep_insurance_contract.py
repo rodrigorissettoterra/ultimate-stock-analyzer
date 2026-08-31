@@ -1,12 +1,16 @@
 from datetime import UTC, date, datetime
 from io import BytesIO
+from typing import Self
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import httpx
 import pytest
 
+from ultimate_stock_analyzer.collectors import susep_ses as susep_ses_module
 from ultimate_stock_analyzer.collectors.susep_ses import (
     CANDIDATE_SOURCE_TABLES,
     SUSEP_SES_DOWNLOAD_URL,
+    SUSEP_SES_TABLE_DOCUMENTATION_URL,
     SusepSesCollector,
     source_contract,
 )
@@ -32,7 +36,66 @@ def test_susep_source_contract_is_official_fail_closed_and_non_pit() -> None:
     assert contract.licensed_entity_registry_required is True
     assert contract.fuzzy_identity_matching_allowed is False
     assert contract.download_url == SUSEP_SES_DOWNLOAD_URL
+    assert contract.table_documentation_url == SUSEP_SES_TABLE_DOCUMENTATION_URL
     assert "Ses_cias.csv" in CANDIDATE_SOURCE_TABLES
+
+
+def test_susep_download_retries_transient_connection_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    class FakeClient:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def get(self, url: str, **_: object) -> httpx.Response:
+            calls.append(url)
+            request = httpx.Request("GET", url)
+            if len(calls) == 1:
+                raise httpx.ConnectTimeout("temporary timeout", request=request)
+            return httpx.Response(200, content=b"official-payload", request=request)
+
+    monkeypatch.setattr(susep_ses_module.httpx, "Client", FakeClient)
+    collector = SusepSesCollector(retry_attempts=2, retry_backoff_seconds=0)
+
+    assert collector.download_archive_bytes() == b"official-payload"
+    assert calls == [SUSEP_SES_DOWNLOAD_URL, SUSEP_SES_DOWNLOAD_URL]
+
+
+def test_susep_download_fails_closed_after_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    class FailingClient:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def get(self, url: str, **_: object) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            raise httpx.ConnectTimeout(
+                "persistent timeout",
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(susep_ses_module.httpx, "Client", FailingClient)
+    collector = SusepSesCollector(retry_attempts=3, retry_backoff_seconds=0)
+
+    with pytest.raises(httpx.ConnectTimeout):
+        collector.download_archive_bytes()
+    assert calls == 3
 
 
 def test_susep_collector_lists_reads_and_inspects_exact_archive_table() -> None:
@@ -94,6 +157,42 @@ def test_candidate_schema_manifest_records_presence_without_promoting_semantics(
         "archive_path": None,
         "columns": [],
     }
+
+
+def test_documentation_manifest_extracts_only_bounded_exact_field_evidence() -> None:
+    documentation = (
+        r"{\rtf1\ansi "
+        r"Ses_seguros.csv\par "
+        r"damesano Ano e m\'eas da informa\'e7\'e3o\par "
+        r"premio_ganho Pr\'eamio Ganho (R$)\par "
+        r"sinistro_ocorrido Sinistros Ocorridos (R$)\par "
+        r"desp_com Despesa Comercial (R$)\par "
+        r"}"
+    ).encode("latin1")
+    manifest = SusepSesCollector().documentation_field_manifest(
+        documentation,
+        fields=("damesano", "premio_ganho", "sinistro_ocorrido", "missing_field"),
+        context_chars=80,
+    )
+
+    assert manifest["source"] == "SUSEP_SES_TABLE_DOCUMENTATION"
+    assert manifest["source_url"] == SUSEP_SES_TABLE_DOCUMENTATION_URL
+    fields = manifest["fields"]
+    assert isinstance(fields, dict)
+    assert fields["damesano"]["present"] is True
+    assert fields["premio_ganho"]["present"] is True
+    assert fields["sinistro_ocorrido"]["present"] is True
+    assert fields["missing_field"] == {
+        "present": False,
+        "occurrences": 0,
+        "snippets": [],
+    }
+    assert "Prêmio Ganho" in fields["premio_ganho"]["snippets"][0]
+
+
+def test_documentation_manifest_rejects_unbounded_context() -> None:
+    with pytest.raises(ValueError, match="at least 40"):
+        SusepSesCollector().documentation_field_manifest(b"{\\rtf1 test}", context_chars=20)
 
 
 def test_insurance_record_keeps_unverified_scoring_metrics_unknown() -> None:

@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/susep-schema-smoke.yml"
       - "scripts/susep_schema_manifest.py"
+      - "scripts/susep_documentation_manifest.py"
       - "src/ultimate_stock_analyzer/collectors/susep_ses.py"
       - "tests/test_susep_insurance_contract.py"
 
@@ -27,10 +28,14 @@ jobs:
         run: pip install -e .
       - name: Inspect official SUSEP SES archive
         run: python scripts/susep_schema_manifest.py --output susep-schema-artifacts/schema_manifest.json
-      - name: Upload sanitized schema manifest only
+      - name: Inspect official SUSEP table documentation
+        run: python scripts/susep_documentation_manifest.py --output susep-schema-artifacts/documentation_manifest.json
+      - name: Upload sanitized SUSEP evidence manifests only
         uses: actions/upload-artifact@v4
         with:
           name: susep-schema-manifest
-          path: susep-schema-artifacts/schema_manifest.json
+          path: |
+            susep-schema-artifacts/schema_manifest.json
+            susep-schema-artifacts/documentation_manifest.json
           if-no-files-found: error
           retention-days: 14
