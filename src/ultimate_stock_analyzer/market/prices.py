@@ -26,6 +26,7 @@ class PriceBar:
     quantity: int
     market_code: int = 10
     isin: str | None = None
+    specification: str | None = None
     best_bid: float | None = None
     best_ask: float | None = None
     adjusted_close: float | None = None
@@ -87,6 +88,7 @@ def parse_cotahist_line(line: str, *, spot_only: bool = True) -> PriceBar | None
         quantity=_integer(record[152:170]),
         volume=_price(record[170:188]),
         isin=record[230:242].strip() or None,
+        specification=record[39:49].strip() or None,
     )
 
 

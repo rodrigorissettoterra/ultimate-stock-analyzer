@@ -16,6 +16,8 @@ CVM_REGISTRY_URL = f"{CVM_BASE}/CAD/DADOS/cad_cia_aberta.csv"
 class CVMCollector:
     user_agent: str = "ultimate-stock-analyzer/0.2"
     timeout_seconds: float = 60.0
+    connect_timeout_seconds: float = 15.0
+    max_attempts: int = 3
 
     def dataset_url(self, document: str, year: int) -> str:
         doc = document.upper()
@@ -27,17 +29,40 @@ class CVMCollector:
         return CVM_REGISTRY_URL
 
     def download_zip(self, document: str, year: int) -> bytes:
-        url = self.dataset_url(document, year)
-        with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
-            response = client.get(url, headers={"User-Agent": self.user_agent})
-            response.raise_for_status()
-            return response.content
+        return self._download_bytes(self.dataset_url(document, year))
 
     def download_registry_bytes(self) -> bytes:
-        with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
-            response = client.get(self.registry_url(), headers={"User-Agent": self.user_agent})
-            response.raise_for_status()
-        return response.content
+        return self._download_bytes(self.registry_url())
+
+    def _download_bytes(self, url: str) -> bytes:
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        if self.connect_timeout_seconds <= 0:
+            raise ValueError("connect_timeout_seconds must be positive")
+
+        timeout = httpx.Timeout(
+            self.timeout_seconds,
+            connect=min(self.connect_timeout_seconds, self.timeout_seconds),
+        )
+        headers = {"User-Agent": self.user_agent}
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            for attempt in range(1, self.max_attempts + 1):
+                try:
+                    response = client.get(url, headers=headers)
+                except httpx.TransportError:
+                    if attempt == self.max_attempts:
+                        raise
+                    continue
+
+                retryable_status = response.status_code == 429 or response.status_code >= 500
+                if retryable_status and attempt < self.max_attempts:
+                    continue
+                response.raise_for_status()
+                return response.content
+
+        raise RuntimeError("CVM download exhausted without a response")
 
     def read_registry_bytes(self, content: bytes) -> pd.DataFrame:
         return pd.read_csv(

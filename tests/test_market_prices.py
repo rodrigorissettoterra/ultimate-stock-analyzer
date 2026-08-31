@@ -53,6 +53,7 @@ def test_parse_cotahist_public_fixed_width_record() -> None:
     assert bar is not None
     assert bar.ticker == "TEST3"
     assert bar.trade_date == date(2026, 8, 28)
+    assert bar.specification == "ON"
     assert bar.open == 10.0
     assert bar.high == 11.0
     assert bar.low == 9.5
