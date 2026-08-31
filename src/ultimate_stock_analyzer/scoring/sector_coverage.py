@@ -14,17 +14,36 @@ class SectorCoverageReport:
     company_catalog_mapped_rows: int
     company_catalog_unmapped_rows: int
     company_catalog_join_coverage: float
+    verified_non_equity_exclusions: int
+    unresolved_outside_catalog_rows: int
+    equity_candidate_identity_coverage: float
     normalized_companies: int
     model_counts: dict[str, int]
     specialized_companies: int
     fallback_companies: int
     specialized_coverage: float
+    fallback_by_sector: dict[str, int]
+    fallback_by_subsector: dict[str, int]
     ambiguous_specialized_matches: int
     outside_active_company_catalog_issuer_codes: tuple[str, ...]
+    verified_non_equity_issuer_codes: tuple[str, ...]
+    unresolved_outside_catalog_issuer_codes: tuple[str, ...]
     ambiguous_company_ids: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def _normalized_codes(values: Iterable[str]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                str(code).strip().upper()
+                for code in values
+                if str(code).strip()
+            }
+        )
+    )
 
 
 def profile_sector_model_coverage(
@@ -33,18 +52,19 @@ def profile_sector_model_coverage(
     registry: SectorModelRegistry,
     classification_rows: int,
     outside_active_company_catalog_issuer_codes: Iterable[str] = (),
+    verified_non_equity_issuer_codes: Iterable[str] = (),
     sample_limit: int = 50,
 ) -> SectorCoverageReport:
     records = list(classifications)
-    outside_catalog = tuple(
-        sorted(
-            {
-                str(code).strip().upper()
-                for code in outside_active_company_catalog_issuer_codes
-                if str(code).strip()
-            }
-        )
+    outside_catalog = _normalized_codes(outside_active_company_catalog_issuer_codes)
+    verified_reference = set(_normalized_codes(verified_non_equity_issuer_codes))
+    verified_exclusions = tuple(
+        code for code in outside_catalog if code in verified_reference
     )
+    unresolved_outside_catalog = tuple(
+        code for code in outside_catalog if code not in verified_reference
+    )
+
     if classification_rows < 0:
         raise ValueError("classification_rows must be non-negative")
     if len(outside_catalog) > classification_rows:
@@ -53,6 +73,8 @@ def profile_sector_model_coverage(
         raise ValueError("sample_limit must be non-negative")
 
     model_counts: Counter[str] = Counter()
+    fallback_by_sector: Counter[str] = Counter()
+    fallback_by_subsector: Counter[str] = Counter()
     ambiguous: list[str] = []
     for record in records:
         row = {
@@ -63,6 +85,9 @@ def profile_sector_model_coverage(
         }
         selection = registry.select(row)
         model_counts[selection.model_id] += 1
+        if selection.model_id == registry.default_model.model_id:
+            fallback_by_sector[record.sector] += 1
+            fallback_by_subsector[f"{record.sector} / {record.subsector}"] += 1
         matches = [
             model.model_id
             for model in registry.models
@@ -72,6 +97,7 @@ def profile_sector_model_coverage(
             ambiguous.append(record.company_id)
 
     mapped_rows = classification_rows - len(outside_catalog)
+    equity_candidate_rows = classification_rows - len(verified_exclusions)
     fallback = model_counts.get(registry.default_model.model_id, 0)
     specialized = len(records) - fallback
     return SectorCoverageReport(
@@ -81,12 +107,23 @@ def profile_sector_model_coverage(
         company_catalog_join_coverage=(
             mapped_rows / classification_rows if classification_rows else 0.0
         ),
+        verified_non_equity_exclusions=len(verified_exclusions),
+        unresolved_outside_catalog_rows=len(unresolved_outside_catalog),
+        equity_candidate_identity_coverage=(
+            mapped_rows / equity_candidate_rows if equity_candidate_rows else 0.0
+        ),
         normalized_companies=len(records),
         model_counts=dict(sorted(model_counts.items())),
         specialized_companies=specialized,
         fallback_companies=fallback,
         specialized_coverage=(specialized / len(records) if records else 0.0),
+        fallback_by_sector=dict(sorted(fallback_by_sector.items())),
+        fallback_by_subsector=dict(sorted(fallback_by_subsector.items())),
         ambiguous_specialized_matches=len(ambiguous),
         outside_active_company_catalog_issuer_codes=outside_catalog[:sample_limit],
+        verified_non_equity_issuer_codes=verified_exclusions[:sample_limit],
+        unresolved_outside_catalog_issuer_codes=(
+            unresolved_outside_catalog[:sample_limit]
+        ),
         ambiguous_company_ids=tuple(sorted(set(ambiguous)))[:sample_limit],
     )
