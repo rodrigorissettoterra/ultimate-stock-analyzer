@@ -1,0 +1,42 @@
+name: cvm-brazilian-equity-universe-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-brazilian-equity-universe-smoke.yml"
+      - "scripts/cvm_brazilian_equity_universe_smoke.py"
+      - "src/ultimate_stock_analyzer/universe/**"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_foreign.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+
+permissions:
+  contents: read
+
+jobs:
+  universe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Verify canonical Brazilian-equity universe controls
+        run: python scripts/cvm_brazilian_equity_universe_smoke.py
+      - name: Publish universe contract
+        if: always()
+        run: |
+          if [ -f cvm-brazilian-equity-universe.json ]; then
+            cat cvm-brazilian-equity-universe.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-brazilian-equity-universe
+          path: cvm-brazilian-equity-universe.json
+          if-no-files-found: error
+          retention-days: 14
