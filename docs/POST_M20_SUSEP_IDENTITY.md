@@ -6,18 +6,13 @@ Listed-company scoring must never connect a CVM/B3 issuer to SUSEP data by ticke
 
 ## Official machine-readable source
 
-SUSEP's `Dados Cadastrais das Entidades - v1` service is an official OData API. Its documented `Dados Cadastrais` resource exposes:
-
-- `mercodigo` — regulated-market code;
-- `entcodigofip` — Código FIP assigned by SUSEP;
-- `entnome` — legal name;
-- `entcgc` — entity CNPJ.
+SUSEP's `Dados Cadastrais das Entidades - v1` service is an official OData API. Its documented `Dados Cadastrais` resource exposes `mercodigo`, `entcodigofip`, `entnome` and `entcgc` (regulated-market code, Código FIP, legal name and CNPJ).
 
 Canonical resource:
 
 `https://dados.susep.gov.br/olinda/servico/empresas/versao/v1/odata/DadosCadastrais`
 
-`SusepOlindaIdentityCollector` requests only those identity fields, pages deterministically by Código FIP and validates every row before it becomes identity evidence. It does not query by company name or ticker.
+The regulator/Open Insurance documentation references the complete resource using `$format=json`. A real GitHub Actions smoke showed that an attempted richer `$select/$orderby/$skip/$top` request returned HTTP 400, so the collector deliberately uses the verified full-resource request shape instead of assuming optional OData combinations are operational. Exact CNPJ matching is performed locally after validation of every returned identity row.
 
 ## Matching contract
 
@@ -35,8 +30,11 @@ Names remain evidence/display metadata only. They are never identity keys.
 - no exact CNPJ match -> no supervised entity returned;
 - similar legal/trade name -> ignored unless CNPJ matches exactly;
 - duplicate registry rows for the same CNPJ/FIP pair -> de-duplicated deterministically;
-- pagination exceeding the configured safety bound -> error;
 - no ticker-based, name-based or fuzzy fallback.
+
+## Monitoring
+
+The dedicated `susep-identity-smoke` workflow calls the official API and uploads only an aggregate manifest containing counts, expected field names, matching policy and source metadata. Raw registry rows are not committed or uploaded as artifacts.
 
 ## Scope boundary
 
