@@ -1,0 +1,52 @@
+name: cvm-security-type-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-security-type-audit-smoke.yml"
+      - "scripts/cvm_security_type_audit.py"
+      - "src/ultimate_stock_analyzer/scoring/security_universe_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/normalization/cvm.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+      - "src/ultimate_stock_analyzer/domain/master.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Resolve completed year
+        id: year
+        run: echo "value=$(python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).year - 1)')" >> "$GITHUB_OUTPUT"
+      - name: Audit exact FCA security types
+        run: |
+          python scripts/cvm_security_type_audit.py \
+            --year "${{ steps.year.outputs.value }}" \
+            --ticker PETR4 \
+            --ticker G2DI33 \
+            --ticker PPLA11 \
+            --output cvm-security-type-audit.json
+      - name: Publish audit summary
+        if: always()
+        run: |
+          if [ -f cvm-security-type-audit.json ]; then
+            cat cvm-security-type-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-security-type-audit
+          path: cvm-security-type-audit.json
+          if-no-files-found: error
+          retention-days: 14
