@@ -59,6 +59,24 @@ def test_registry_routes_sector_specific_models_and_normalizes_accents() -> None
     assert fallback.reason == "default_fallback"
 
 
+def test_b3_gas_utility_does_not_overlap_commodity_model() -> None:
+    registry = SectorModelRegistry.from_yaml(REGISTRY)
+    row = {
+        "ticker": "GAS3",
+        "sector": "Utilidade Pública",
+        "subsector": "Gás",
+        "segment": "Gás",
+    }
+
+    assert registry.select(row).model_id == "utilities"
+    matches = [
+        model.model_id
+        for model in registry.models
+        if model.match_reason(row) is not None
+    ]
+    assert matches == ["utilities"]
+
+
 def test_banks_use_bank_model_and_ignore_corporate_leverage_metric() -> None:
     registry = SectorModelRegistry.from_yaml(REGISTRY)
     engine = SectorStructuralScoringEngine(registry)

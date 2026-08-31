@@ -1,4 +1,4 @@
-version: "0.6.0"
+version: "0.6.1"
 
 default_model:
   id: general_corporate
@@ -38,5 +38,5 @@ models:
     peer_group_by: [subsector, segment, sector]
     match:
       sector_contains: [oil & gas, petroleo, petróleo, mining, mineracao, mineração, metals & mining, pulp & paper, celulose]
-      subsector_contains: [oil, gas, petroleo, petróleo, mining, mineracao, mineração, siderurgia, steel, celulose, pulp, papel]
-      segment_contains: [oil, gas, petroleo, petróleo, mining, mineracao, mineração, iron ore, minério, siderurgia, celulose, pulp]
+      subsector_contains: [oil, petroleo, petróleo, mining, mineracao, mineração, siderurgia, steel, celulose, pulp, papel]
+      segment_contains: [oil, petroleo, petróleo, mining, mineracao, mineração, iron ore, minério, siderurgia, celulose, pulp]
