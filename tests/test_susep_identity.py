@@ -79,6 +79,18 @@ def test_olinda_response_shape_fails_closed() -> None:
         collector._response_rows({"value": ["invalid"]})
 
 
+def test_olinda_rows_without_cnpj_or_fip_are_not_identity_candidates() -> None:
+    collector = SusepOlindaIdentityCollector()
+    assert collector._is_identity_candidate(
+        {"entcgc": "92863505000106", "entcodigofip": "06947"}
+    )
+    assert not collector._is_identity_candidate({"entcgc": None, "entcodigofip": "06947"})
+    assert not collector._is_identity_candidate({"entcgc": "", "entcodigofip": "06947"})
+    assert not collector._is_identity_candidate(
+        {"entcgc": "92863505000106", "entcodigofip": None}
+    )
+
+
 @pytest.mark.parametrize(
     "row, exception, message",
     [
@@ -88,18 +100,18 @@ def test_olinda_response_shape_fails_closed() -> None:
             "legal name",
         ),
         (
-            {"mercodigo": 2, "entcodigofip": "06947", "entnome": "A", "entcgc": None},
+            {"mercodigo": 2, "entcodigofip": "06947", "entnome": "A", "entcgc": 123},
             TypeError,
             "CNPJ",
         ),
         (
-            {"mercodigo": 2, "entcodigofip": None, "entnome": "A", "entcgc": "92863505000106"},
+            {"mercodigo": 2, "entcodigofip": 6947, "entnome": "A", "entcgc": "92863505000106"},
             TypeError,
             "FIP code",
         ),
     ],
 )
-def test_olinda_invalid_identity_rows_fail_closed(
+def test_olinda_malformed_non_null_identity_rows_fail_closed(
     row: dict, exception: type[Exception], message: str
 ) -> None:
     with pytest.raises(exception, match=message):
