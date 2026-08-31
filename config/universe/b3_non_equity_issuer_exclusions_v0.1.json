@@ -1,0 +1,56 @@
+{
+  "version": "0.1.0",
+  "verified_at": "2026-08-31",
+  "scope": "Current B3 industry-classification rows outside the active company catalog that are verified as non-equity or non-exchange-equity instruments for the project's Brazilian listed-equity universe.",
+  "exclusions": [
+    {
+      "issuer_code": "CTBA",
+      "category": "cepac",
+      "issuer": "Prefeitura Municipal de Curitiba",
+      "rationale": "B3 identifies CTBA11B as a CEPAC/investment certificate, not an exchange-listed company share.",
+      "evidence_urls": [
+        "https://bvmf.bmfbovespa.com.br/cias-listadas/Titulos-Negociaveis/DetalheTitulosNegociaveis.aspx?cb=CTBA&idioma=en-US&or=res&tip=I",
+        "https://www.b3.com.br/data/files/A1/22/C3/7E/E2542510773C9C1592D828A8/LinhaVerde-Inicio-de-negociacao.pdf"
+      ]
+    },
+    {
+      "issuer_code": "MCRJ",
+      "category": "cepac",
+      "issuer": "Municipio do Rio de Janeiro",
+      "rationale": "B3 identifies MCRJ11B as a CEPAC/investment certificate, not an exchange-listed company share.",
+      "evidence_urls": [
+        "https://bvmf.bmfbovespa.com.br/cias-listadas/Titulos-Negociaveis/DetalheTitulosNegociaveis.aspx?cb=MCRJ&idioma=en-US&or=res&tip=I",
+        "https://www.b3.com.br/data/files/5F/70/98/9D/14542510773C9C1592D828A8/Porto-do-RJ-Inicio-de-negociacao.pdf"
+      ]
+    },
+    {
+      "issuer_code": "PMSP",
+      "category": "cepac",
+      "issuer": "Prefeitura Municipal de Sao Paulo",
+      "rationale": "B3 identifies PMSP11B/PMSP12B/PMSP13B as CEPAC certificates rather than company shares.",
+      "evidence_urls": [
+        "https://bvmf.bmfbovespa.com.br/cias-listadas/Titulos-Negociaveis/DetalheTitulosNegociaveis.aspx?cb=PMSP&idioma=pt-BR&or=res&tip=I",
+        "https://arquivos.b3.com.br/bdi/download/bdi/2024-03-11/BDI_02_20240311.pdf"
+      ]
+    },
+    {
+      "issuer_code": "PLSC",
+      "category": "securitization_receivables",
+      "issuer": "Polo Capital Securitizadora S.A.",
+      "rationale": "B3's ISIN registry uses PLSC for CRI securities and the code is outside the active company catalog used by the equity identity chain.",
+      "evidence_urls": [
+        "https://bvmf.bmfbovespa.com.br/consulta-isin/DetalheCodigosIsin.aspx?emissor=58890&idioma=pt-BR"
+      ]
+    },
+    {
+      "issuer_code": "RBRA",
+      "category": "securitization_receivables_outside_active_equity_catalog",
+      "issuer": "OPEA Securitizadora S.A.",
+      "rationale": "B3 currently uses RBRA for OPEA CRI/CRA securities; the issuer remains outside the active company catalog used by the exchange-equity identity chain.",
+      "evidence_urls": [
+        "https://sistemasweb.b3.com.br/PlantaoNoticias/Noticias/Detail?agencia=18&dataNoticia=2026-07-07+11%3A47%3A36&idNoticia=3414413",
+        "https://bvmf.bmfbovespa.com.br/consulta-isin/DetalheCodigosIsin.aspx?emissor=60681&idioma=en-US"
+      ]
+    }
+  ]
+}

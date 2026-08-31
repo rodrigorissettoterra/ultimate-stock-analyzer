@@ -10,6 +10,7 @@ on:
       - "src/ultimate_stock_analyzer/scoring/sector_coverage.py"
       - "src/ultimate_stock_analyzer/scoring/sector_models.py"
       - "config/scoring/sector_registry_v0.6.yml"
+      - "config/universe/b3_non_equity_issuer_exclusions_v0.1.json"
       - "scripts/b3_sector_coverage_manifest.py"
       - ".github/workflows/b3-sector-coverage-smoke.yml"
 
