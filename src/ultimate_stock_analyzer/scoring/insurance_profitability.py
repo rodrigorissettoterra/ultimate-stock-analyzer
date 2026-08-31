@@ -53,11 +53,21 @@ def derive_susep_profitability_metrics(
 
     current_period = fiscal_year * 100 + 12
     prior_period = (fiscal_year - 1) * 100 + 12
-    net_income = _exact_value(table, company_code=code, period=current_period, cmpid=518)
-    current_equity = _exact_value(table, company_code=code, period=current_period, cmpid=3333)
-    prior_equity = _exact_value(table, company_code=code, period=prior_period, cmpid=3333)
-    current_assets = _exact_value(table, company_code=code, period=current_period, cmpid=1039)
-    prior_assets = _exact_value(table, company_code=code, period=prior_period, cmpid=1039)
+    net_income = _exact_value(
+        table, company_code=code, period=current_period, cmpid=_NET_INCOME_CMPID
+    )
+    current_equity = _exact_value(
+        table, company_code=code, period=current_period, cmpid=_EQUITY_CMPID
+    )
+    prior_equity = _exact_value(
+        table, company_code=code, period=prior_period, cmpid=_EQUITY_CMPID
+    )
+    current_assets = _exact_value(
+        table, company_code=code, period=current_period, cmpid=_TOTAL_ASSETS_CMPID
+    )
+    prior_assets = _exact_value(
+        table, company_code=code, period=prior_period, cmpid=_TOTAL_ASSETS_CMPID
+    )
 
     return InsuranceProfitabilityMetrics(
         susep_company_code=susep_company_code,
