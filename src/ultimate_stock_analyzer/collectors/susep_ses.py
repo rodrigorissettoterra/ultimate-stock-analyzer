@@ -99,10 +99,44 @@ class SusepSesCollector:
             )
 
     def inspect_schema(self, archive: bytes, table_name: str) -> tuple[str, ...]:
-        """Return raw official column names without mapping them to model metrics."""
+        """Return raw official column names without loading the full table."""
 
-        frame = self.read_table(archive, table_name)
+        filename = self.find_table(archive, table_name)
+        with ZipFile(BytesIO(archive)) as zf, zf.open(filename) as csv_file:
+            frame = pd.read_csv(
+                csv_file,
+                sep=";",
+                encoding="latin1",
+                nrows=0,
+            )
         return tuple(str(column) for column in frame.columns)
+
+    def candidate_schema_manifest(self, archive: bytes) -> dict[str, object]:
+        """Inspect candidate tables and record presence/schema without semantic mapping."""
+
+        csv_files = self.list_csv_files(archive)
+        tables: dict[str, dict[str, object]] = {}
+        for table_name in CANDIDATE_SOURCE_TABLES:
+            try:
+                filename = self.find_table(archive, table_name)
+            except ValueError:
+                tables[table_name] = {
+                    "present": False,
+                    "archive_path": None,
+                    "columns": [],
+                }
+                continue
+            tables[table_name] = {
+                "present": True,
+                "archive_path": filename,
+                "columns": list(self.inspect_schema(archive, table_name)),
+            }
+        return {
+            "source": "SUSEP_SES",
+            "point_in_time_eligible": False,
+            "csv_file_count": len(csv_files),
+            "tables": tables,
+        }
 
 
 def source_contract() -> SusepSesSourceContract:

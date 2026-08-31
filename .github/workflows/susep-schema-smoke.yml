@@ -1,0 +1,36 @@
+name: susep-schema-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 10 * * 0"
+  pull_request:
+    paths:
+      - ".github/workflows/susep-schema-smoke.yml"
+      - "scripts/susep_schema_manifest.py"
+      - "src/ultimate_stock_analyzer/collectors/susep_ses.py"
+      - "tests/test_susep_insurance_contract.py"
+
+permissions:
+  contents: read
+
+jobs:
+  schema-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e .
+      - name: Inspect official SUSEP SES archive
+        run: python scripts/susep_schema_manifest.py --output susep-schema-artifacts/schema_manifest.json
+      - name: Upload sanitized schema manifest only
+        uses: actions/upload-artifact@v4
+        with:
+          name: susep-schema-manifest
+          path: susep-schema-artifacts/schema_manifest.json
+          if-no-files-found: error
+          retention-days: 14

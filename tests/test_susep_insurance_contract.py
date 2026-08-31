@@ -69,6 +69,33 @@ def test_susep_collector_fails_closed_when_exact_table_is_missing_or_ambiguous()
         collector.find_table(ambiguous, "Ses_cias.csv")
 
 
+def test_candidate_schema_manifest_records_presence_without_promoting_semantics() -> None:
+    archive = _archive(
+        {
+            "BaseCompleta/Ses_cias.csv": "CODIGO;NOME\n123;SEGURADORA TESTE\n",
+            "BaseCompleta/Ses_seguros.csv": "MES;PREMIO;SINISTRO\n202501;10;5\n",
+            "BaseCompleta/other.csv": "A\n1\n",
+        }
+    )
+    manifest = SusepSesCollector().candidate_schema_manifest(archive)
+
+    assert manifest["source"] == "SUSEP_SES"
+    assert manifest["point_in_time_eligible"] is False
+    assert manifest["csv_file_count"] == 3
+    tables = manifest["tables"]
+    assert isinstance(tables, dict)
+    assert tables["Ses_cias.csv"] == {
+        "present": True,
+        "archive_path": "BaseCompleta/Ses_cias.csv",
+        "columns": ["CODIGO", "NOME"],
+    }
+    assert tables["Ses_pl_margem.csv"] == {
+        "present": False,
+        "archive_path": None,
+        "columns": [],
+    }
+
+
 def test_insurance_record_keeps_unverified_scoring_metrics_unknown() -> None:
     record = InsuranceSusepAnnualRecord(
         company_id="cvm:00000",
