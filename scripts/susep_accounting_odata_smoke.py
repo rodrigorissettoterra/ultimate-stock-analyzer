@@ -12,6 +12,9 @@ from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
     SusepAccountingODataService,
 )
 
+_SMOKE_YEAR = 2025
+_SMOKE_RESOURCES = ("ContabeisDRE", "ContabeisAtivo")
+
 
 def run(output: Path) -> dict[str, object]:
     service = SusepAccountingODataService()
@@ -22,6 +25,24 @@ def run(output: Path) -> dict[str, object]:
         raise RuntimeError(
             "official SUSEP accounting OData service is missing verified resources: "
             + ", ".join(missing)
+        )
+
+    query_checks: list[dict[str, object]] = []
+    for resource in _SMOKE_RESOURCES:
+        rows = service.fetch_year_rows(resource, year=_SMOKE_YEAR, top=1)
+        if not rows:
+            raise RuntimeError(f"official SUSEP accounting resource returned no rows: {resource}")
+        sample = rows[0]
+        query_checks.append(
+            {
+                "resource": resource,
+                "year": _SMOKE_YEAR,
+                "row_count_requested": 1,
+                "row_count_returned": len(rows),
+                "sample_cmpid": sample.cmpid,
+                "sample_cmp_title": sample.cmp_title,
+                "parsed_cnpj_length": len(sample.cnpj),
+            }
         )
 
     manifest: dict[str, object] = {
@@ -36,6 +57,7 @@ def run(output: Path) -> dict[str, object]:
         ],
         "verified_canonical_resources": list(VERIFIED_ACCOUNTING_RESOURCES),
         "verified_canonical_resources_present": True,
+        "live_year_query_checks": query_checks,
         "documented_row_fields": [
             "entnome",
             "cnpj",
