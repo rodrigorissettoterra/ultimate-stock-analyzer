@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ultimate_stock_analyzer.collectors.susep_accounting_odata import (
+    SUSEP_ACCOUNTING_DOCUMENTATION_URL,
+    SUSEP_ACCOUNTING_ODATA_ROOT,
+    SusepAccountingODataService,
+)
+
+
+def run(output: Path) -> dict[str, object]:
+    service = SusepAccountingODataService()
+    resource_names = service.fetch_resource_names()
+    manifest: dict[str, object] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "SUSEP_OLINDA_ACCOUNTING",
+        "service_root": SUSEP_ACCOUNTING_ODATA_ROOT,
+        "documentation_url": SUSEP_ACCOUNTING_DOCUMENTATION_URL,
+        "resource_count": len(resource_names),
+        "resource_names": list(resource_names),
+        "documented_row_fields": [
+            "entnome",
+            "cnpj",
+            "mesreferencia",
+            "cmpid",
+            "cmptitulo",
+            "valor",
+            "cmpnumero",
+        ],
+        "raw_financial_rows_persisted": False,
+        "semantic_promotion": False,
+        "point_in_time_eligible": False,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Inspect the official SUSEP accounting OData service without storing financial rows."
+    )
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    print(json.dumps(run(args.output), indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
