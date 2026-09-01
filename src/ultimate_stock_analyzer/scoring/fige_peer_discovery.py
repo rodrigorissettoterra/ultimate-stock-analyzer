@@ -347,6 +347,7 @@ def _selection(
 ) -> SectorModelSelection:
     return registry.select(
         {
+            "company_id": record.company_id,
             "sector": record.sector,
             "subsector": record.subsector,
             "segment": record.segment,
