@@ -5,6 +5,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from ultimate_stock_analyzer.universe.current_equity_securities import (
+    CurrentBrazilianEquitySecurityUniverseReport,
+)
 from ultimate_stock_analyzer.universe.eligibility import (
     BrazilianEquityEligibilityReport,
 )
@@ -37,12 +40,18 @@ def partition_current_analysis_rows(
     rows: Iterable[Mapping[str, Any]],
     *,
     eligibility_report: BrazilianEquityEligibilityReport,
+    security_universe_report: CurrentBrazilianEquitySecurityUniverseReport | None = None,
 ) -> tuple[list[dict[str, Any]], CurrentAnalysisUniverseGateReport]:
     """Fail-closed current-state universe gate to run before investment scoring.
 
-    The gate is intentionally engine-agnostic. It filters by canonical CVM issuer
-    identity before any cross-sectional normalization or score calculation can be
-    influenced by an issuer outside the Brazilian-company universe.
+    Canonical CVM issuer identity is always required. When ``security_universe_report``
+    is supplied, the gate additionally requires an exact B3 security code in ``ticker``
+    and only passes rows whose canonical company/security pair is eligible in the
+    current Brazilian core-equity universe.
+
+    The security-level path is intentionally current-state only. Neither the CVM
+    jurisdiction registry nor the current B3 instrument/trading evidence is
+    point-in-time eligible for historical backtests.
     """
 
     decisions = {
@@ -52,6 +61,26 @@ def partition_current_analysis_rows(
     eligible: list[dict[str, Any]] = []
     exclusions: list[ExcludedCurrentAnalysisRow] = []
     counts: Counter[str] = Counter()
+
+    security_company_decisions = None
+    security_decisions = None
+    if security_universe_report is not None:
+        security_company_decisions = {
+            decision.company_id: decision
+            for decision in security_universe_report.company_decisions
+        }
+        security_decisions = {
+            (decision.company_id, decision.code): decision
+            for decision in security_universe_report.security_decisions
+        }
+        if len(security_company_decisions) != len(
+            security_universe_report.company_decisions
+        ):
+            raise ValueError("Current security universe contains duplicate company_id values")
+        if len(security_decisions) != len(security_universe_report.security_decisions):
+            raise ValueError(
+                "Current security universe contains duplicate company/security decisions"
+            )
 
     for index, row in enumerate(records):
         company_id = _row_company_id(row, index=index)
@@ -63,20 +92,80 @@ def partition_current_analysis_rows(
                 f"company_id={company_id}"
             )
 
-        counts[decision.status] += 1
-        if decision.eligible:
+        if not decision.eligible:
+            counts[decision.status] += 1
+            exclusions.append(
+                ExcludedCurrentAnalysisRow(
+                    company_id=company_id,
+                    ticker=_normalized_ticker(row),
+                    status=decision.status,
+                    reason=decision.reason,
+                    evidence_sources=decision.evidence_sources,
+                )
+            )
+            continue
+
+        if security_universe_report is None:
+            counts[decision.status] += 1
             eligible.append(row)
             continue
 
-        exclusions.append(
-            ExcludedCurrentAnalysisRow(
-                company_id=company_id,
-                ticker=str(row.get("ticker") or "").strip().upper(),
-                status=decision.status,
-                reason=decision.reason,
-                evidence_sources=decision.evidence_sources,
+        ticker = _row_ticker(row, index=index)
+        row["ticker"] = ticker
+        assert security_company_decisions is not None
+        assert security_decisions is not None
+
+        company_security_decision = security_company_decisions.get(company_id)
+        if company_security_decision is None:
+            raise ValueError(
+                "Current analysis row lacks a current security-universe company decision: "
+                f"company_id={company_id}"
             )
-        )
+        if not company_security_decision.eligible:
+            counts[company_security_decision.status] += 1
+            exclusions.append(
+                ExcludedCurrentAnalysisRow(
+                    company_id=company_id,
+                    ticker=ticker,
+                    status=company_security_decision.status,
+                    reason=company_security_decision.reason,
+                    evidence_sources=("B3 GetDetail", "B3 COTAHIST"),
+                )
+            )
+            continue
+
+        security_decision = security_decisions.get((company_id, ticker))
+        if security_decision is None:
+            status = "EXCLUDED_SECURITY_NOT_IN_CURRENT_UNIVERSE"
+            counts[status] += 1
+            exclusions.append(
+                ExcludedCurrentAnalysisRow(
+                    company_id=company_id,
+                    ticker=ticker,
+                    status=status,
+                    reason=(
+                        "The exact ticker has no current security-universe decision for "
+                        "this canonical CVM company identity."
+                    ),
+                    evidence_sources=("B3 GetDetail", "B3 COTAHIST"),
+                )
+            )
+            continue
+        if not security_decision.eligible:
+            counts[security_decision.status] += 1
+            exclusions.append(
+                ExcludedCurrentAnalysisRow(
+                    company_id=company_id,
+                    ticker=ticker,
+                    status=security_decision.status,
+                    reason=security_decision.reason,
+                    evidence_sources=("B3 GetDetail", "B3 COTAHIST"),
+                )
+            )
+            continue
+
+        counts[security_decision.status] += 1
+        eligible.append(row)
 
     return eligible, CurrentAnalysisUniverseGateReport(
         analysis_rows=len(records),
@@ -106,3 +195,17 @@ def _row_company_id(row: Mapping[str, Any], *, index: int) -> str:
             f"row_index={index} value={value}"
         )
     return f"cvm:{int(code)}"
+
+
+def _row_ticker(row: Mapping[str, Any], *, index: int) -> str:
+    ticker = _normalized_ticker(row)
+    if not ticker:
+        raise ValueError(
+            "Current analysis security gate requires exact B3 security code in ticker; "
+            f"row_index={index}"
+        )
+    return ticker
+
+
+def _normalized_ticker(row: Mapping[str, Any]) -> str:
+    return str(row.get("ticker") or "").strip().upper()
