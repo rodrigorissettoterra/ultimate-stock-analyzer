@@ -25,7 +25,7 @@ from ultimate_stock_analyzer.universe.eligibility import (
 
 DEFAULT_EXCLUSIONS = "config/universe/b3_non_equity_issuer_exclusions_v0.1.json"
 DEFAULT_APPLICABILITY_REVIEWS = (
-    "config/universe/b3_structural_applicability_reviews_v0.4.json"
+    "config/universe/b3_structural_applicability_reviews_v0.5.json"
 )
 
 

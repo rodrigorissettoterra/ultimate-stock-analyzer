@@ -27,7 +27,7 @@ from ultimate_stock_analyzer.universe.eligibility import (
 
 DEFAULT_REGISTRY = "config/scoring/sector_registry_v0.6.yml"
 DEFAULT_APPLICABILITY_REVIEWS = (
-    "config/universe/b3_structural_applicability_reviews_v0.4.json"
+    "config/universe/b3_structural_applicability_reviews_v0.5.json"
 )
 
 
