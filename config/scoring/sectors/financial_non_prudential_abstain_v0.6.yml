@@ -1,0 +1,9 @@
+version: "0.6.0"
+model_family: "financial_non_prudential_abstain_v1"
+peer_group_field: "peer_group"
+default_min_peer_count: 8
+min_coverage_for_ranking: 1.0
+min_confidence_for_ranking: 1.0
+
+category_weights: {}
+metrics: []
