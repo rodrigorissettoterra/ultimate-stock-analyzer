@@ -60,6 +60,30 @@ def _registry() -> SectorModelRegistry:
     )
 
 
+def _registry_with_abstention() -> SectorModelRegistry:
+    return SectorModelRegistry(
+        version="test-abstain",
+        default_model=SectorModelDefinition(
+            model_id="general_corporate",
+            config_path=Path("general.yml"),
+        ),
+        models=(
+            SectorModelDefinition(
+                model_id="banks",
+                config_path=Path("banks.yml"),
+                priority=100,
+                segment_contains=("banco",),
+            ),
+            SectorModelDefinition(
+                model_id="financial_non_prudential_abstain",
+                config_path=Path("abstain.yml"),
+                priority=90,
+                segment_contains=("outros intermediarios financeiros",),
+            ),
+        ),
+    )
+
+
 def _report(
     company_id: str,
     *,
@@ -134,6 +158,27 @@ def test_discovery_limits_schema_audit_to_near_fallback_candidates() -> None:
     assert by_id["cvm:400"].disposition == "CONTEXT_ONLY_BROADER_SCOPE"
     assert "cvm:500" not in by_id
     assert schema_audit_company_ids(candidates) == ("cvm:100", "cvm:200")
+
+
+def test_discovery_remains_drift_monitor_after_fige_routes_to_abstention() -> None:
+    segment = "Outros Intermediarios Financeiros"
+    records = [
+        _record("cvm:6041", 6041, "FIGE", segment=segment),
+        _record("cvm:700", 700, "NEWF", segment=segment),
+        _record("cvm:300", 300, "BANK", segment="Banco Comercial"),
+    ]
+    anchor, candidates = discover_fige_classification_candidates(
+        records,
+        registry=_registry_with_abstention(),
+    )
+
+    assert anchor.model_id == "financial_non_prudential_abstain"
+    assert anchor.is_fallback is False
+    by_id = {candidate.company_id: candidate for candidate in candidates}
+    assert by_id["cvm:700"].model_id == "financial_non_prudential_abstain"
+    assert by_id["cvm:700"].disposition == "NO_DFP_EVIDENCE"
+    assert schema_audit_company_ids(candidates) == ("cvm:700",)
+    assert by_id["cvm:300"].disposition == "EXCLUDED_SPECIALIZED_MODEL"
 
 
 def test_schema_matching_requires_exact_code_and_label_for_primary_concepts() -> None:

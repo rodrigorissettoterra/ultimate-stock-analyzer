@@ -25,6 +25,8 @@ CandidateDisposition = Literal[
     "SCHEMA_MISMATCH",
     "PRIMARY_SCHEMA_COMPATIBLE_REQUIRES_HISTORY_VALIDATION",
 ]
+FIGE_ABSTENTION_MODEL_ID = "financial_non_prudential_abstain"
+_ALLOWED_ANCHOR_MODEL_IDS = frozenset({"general_corporate", FIGE_ABSTENTION_MODEL_ID})
 PRIMARY_METRIC_REQUIRED_CONCEPTS = frozenset(
     {
         "total_assets",
@@ -133,10 +135,10 @@ def discover_fige_classification_candidates(
         selection_reason=anchor_selection.reason,
         is_fallback=anchor_selection.is_fallback,
     )
-    if not anchor.is_fallback:
+    if anchor.model_id not in _ALLOWED_ANCHOR_MODEL_IDS:
         raise ValueError(
-            "FIGE peer discovery anchor is no longer on the fallback model; "
-            "review the routing change before continuing this diagnostic"
+            "FIGE peer discovery anchor has an unexpected economic-model route: "
+            f"model_id={anchor.model_id}"
         )
 
     candidates: list[FigePeerCandidate] = []
@@ -149,7 +151,7 @@ def discover_fige_classification_candidates(
         selection = _selection(registry, record)
         if scope == "SAME_SECTOR":
             disposition: CandidateDisposition = "CONTEXT_ONLY_BROADER_SCOPE"
-        elif not selection.is_fallback:
+        elif not _route_is_schema_auditable(selection):
             disposition = "EXCLUDED_SPECIALIZED_MODEL"
         else:
             disposition = "NO_DFP_EVIDENCE"
@@ -331,8 +333,12 @@ def schema_audit_company_ids(
         candidate.company_id
         for candidate in candidates
         if candidate.peer_scope in {"EXACT_SEGMENT", "SAME_SUBSECTOR"}
-        and candidate.is_fallback
+        and (candidate.is_fallback or candidate.model_id == FIGE_ABSTENTION_MODEL_ID)
     )
+
+
+def _route_is_schema_auditable(selection: SectorModelSelection) -> bool:
+    return selection.is_fallback or selection.model_id == FIGE_ABSTENTION_MODEL_ID
 
 
 def _selection(
