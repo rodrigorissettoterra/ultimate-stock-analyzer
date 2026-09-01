@@ -1,0 +1,38 @@
+name: cvm-2024-metadata-ambiguity-probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-2024-metadata-ambiguity-probe.yml"
+      - "scripts/cvm_metadata_ambiguity_probe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Probe official DFP 2024 metadata key
+        run: |
+          python scripts/cvm_metadata_ambiguity_probe.py \
+            --year 2024 \
+            --cvm-code 26824 \
+            --reference-date 2024-12-31 \
+            --version 1 \
+            --output cvm-metadata-ambiguity-probe.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cvm-metadata-ambiguity-probe
+          path: cvm-metadata-ambiguity-probe.json
+          if-no-files-found: error
+          retention-days: 7
