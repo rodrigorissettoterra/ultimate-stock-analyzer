@@ -1,0 +1,59 @@
+name: fige-metric-selection-contract-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/fige-metric-selection-contract-smoke.yml"
+      - "config/scoring/fige_financial_non_prudential_metric_contract_v0.1.yml"
+      - "scripts/fige_metric_selection_contract.py"
+      - "scripts/fige_economic_metrics_audit.py"
+      - "src/ultimate_stock_analyzer/scoring/fige_metric_selection.py"
+      - "src/ultimate_stock_analyzer/fundamentals/fige_economic_metrics_audit.py"
+      - "src/ultimate_stock_analyzer/fundamentals/fige_financial_contract.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_targeted_statements.py"
+      - "src/ultimate_stock_analyzer/scoring/statement_tree_audit.py"
+      - "src/ultimate_stock_analyzer/normalization/cvm.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+
+permissions:
+  contents: read
+
+jobs:
+  selection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Rebuild FIGE economic audit evidence
+        run: |
+          python scripts/fige_economic_metrics_audit.py \
+            --start-year 2021 \
+            --end-year 2025 \
+            --output fige-economic-metrics-audit.json
+      - name: Evaluate metric-selection contract
+        run: |
+          python scripts/fige_metric_selection_contract.py \
+            --audit fige-economic-metrics-audit.json \
+            --contract config/scoring/fige_financial_non_prudential_metric_contract_v0.1.yml \
+            --output fige-metric-selection-evidence.json
+      - name: Publish selection evidence
+        if: always()
+        run: |
+          if [ -f fige-metric-selection-evidence.json ]; then
+            cat fige-metric-selection-evidence.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fige-metric-selection-evidence
+          path: |
+            fige-economic-metrics-audit.json
+            fige-metric-selection-evidence.json
+          if-no-files-found: error
+          retention-days: 14
