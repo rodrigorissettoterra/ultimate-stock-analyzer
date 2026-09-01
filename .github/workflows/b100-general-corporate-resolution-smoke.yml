@@ -1,0 +1,55 @@
+name: b100-general-corporate-resolution-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b100-general-corporate-resolution-smoke.yml"
+      - "scripts/b100_structural_resolution_regression.py"
+      - "src/ultimate_stock_analyzer/scoring/b100_structural_resolution.py"
+      - "src/ultimate_stock_analyzer/scoring/b100_accounting_lifecycle.py"
+      - "src/ultimate_stock_analyzer/scoring/applicability_review.py"
+      - "src/ultimate_stock_analyzer/scoring/sector_coverage.py"
+      - "src/ultimate_stock_analyzer/scoring/sector_models.py"
+      - "src/ultimate_stock_analyzer/fundamentals/cvm_accounts.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_foreign.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_targeted_statements.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+      - "src/ultimate_stock_analyzer/universe/**"
+      - "config/scoring/sector_registry_v0.6.yml"
+      - "config/universe/b3_structural_applicability_reviews_v0.4.json"
+      - "config/universe/b3_structural_applicability_reviews_v0.5.json"
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Validate B100 general-corporate resolution
+        run: |
+          python scripts/b100_structural_resolution_regression.py \
+            --output b100-general-corporate-resolution-regression.json
+      - name: Publish resolution evidence
+        if: always()
+        run: |
+          if [ -f b100-general-corporate-resolution-regression.json ]; then
+            cat b100-general-corporate-resolution-regression.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b100-general-corporate-resolution-regression
+          path: b100-general-corporate-resolution-regression.json
+          if-no-files-found: error
+          retention-days: 14

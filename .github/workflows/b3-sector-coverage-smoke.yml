@@ -18,7 +18,7 @@ on:
       - "config/scoring/sectors/financial_non_prudential_abstain_v0.6.yml"
       - "config/scoring/sectors/itsa_holding_abstain_v0.6.yml"
       - "config/universe/b3_non_equity_issuer_exclusions_v0.1.json"
-      - "config/universe/b3_structural_applicability_reviews_v0.4.json"
+      - "config/universe/b3_structural_applicability_reviews_v0.5.json"
       - "scripts/b3_sector_coverage_manifest.py"
       - ".github/workflows/b3-sector-coverage-smoke.yml"
 
