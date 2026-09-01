@@ -1,0 +1,51 @@
+name: holding-segment-economic-stability-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/holding-segment-economic-stability-audit-smoke.yml"
+      - "scripts/holding_segment_economic_stability_audit.py"
+      - "src/ultimate_stock_analyzer/scoring/holding_segment_economic_stability.py"
+      - "src/ultimate_stock_analyzer/scoring/itsa_peer_discovery.py"
+      - "src/ultimate_stock_analyzer/fundamentals/itsa_holding_contract.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_targeted_statements.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_foreign.py"
+      - "src/ultimate_stock_analyzer/universe/**"
+      - "config/scoring/sector_registry_v0.6.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Audit current holding segment across DFP 2021-2025
+        run: |
+          python scripts/holding_segment_economic_stability_audit.py \
+            --start-year 2021 \
+            --end-year 2025 \
+            --output holding-segment-economic-stability-audit.json
+      - name: Publish holding-segment evidence
+        if: always()
+        run: |
+          if [ -f holding-segment-economic-stability-audit.json ]; then
+            cat holding-segment-economic-stability-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: holding-segment-economic-stability-audit
+          path: holding-segment-economic-stability-audit.json
+          if-no-files-found: error
+          retention-days: 14
