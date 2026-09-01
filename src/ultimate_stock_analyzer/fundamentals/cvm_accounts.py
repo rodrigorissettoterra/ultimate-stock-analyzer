@@ -68,6 +68,8 @@ def extract_fixed_accounts(
             or line.consolidation_scope == consolidation_scope
         )
     ]
+    if consolidation_scope is None:
+        candidates = _prefer_accounting_scope(candidates)
 
     values: dict[str, float] = {}
     lineage: dict[str, FinancialStatementLine] = {}
@@ -91,6 +93,43 @@ def extract_fixed_accounts(
         lines=lineage,
         missing=tuple(missing),
     )
+
+
+def _prefer_accounting_scope(
+    candidates: list[FinancialStatementLine],
+) -> list[FinancialStatementLine]:
+    """Choose one accounting scope before extracting any fixed account.
+
+    CVM issuers can publish individual and consolidated statements for the same
+    reference date. Mixing them account-by-account produces internally inconsistent
+    metrics. Consolidated statements represent the economic group and are preferred
+    whenever present; individual statements are used only when no consolidated rows
+    exist for the issuer/reference date.
+    """
+
+    scope_kinds = {_scope_kind(line.consolidation_scope) for line in candidates}
+    if "consolidated" in scope_kinds:
+        return [
+            line
+            for line in candidates
+            if _scope_kind(line.consolidation_scope) == "consolidated"
+        ]
+    if "individual" in scope_kinds:
+        return [
+            line
+            for line in candidates
+            if _scope_kind(line.consolidation_scope) == "individual"
+        ]
+    return candidates
+
+
+def _scope_kind(value: str | None) -> str:
+    normalized = str(value or "").casefold()
+    if "consolid" in normalized:
+        return "consolidated"
+    if "individual" in normalized:
+        return "individual"
+    return "other"
 
 
 def _revision_rank(line: FinancialStatementLine) -> tuple[int, int]:
