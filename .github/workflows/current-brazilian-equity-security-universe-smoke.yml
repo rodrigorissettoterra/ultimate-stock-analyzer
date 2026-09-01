@@ -1,0 +1,66 @@
+name: current-brazilian-equity-security-universe-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/current-brazilian-equity-security-universe-smoke.yml"
+      - "scripts/current_brazilian_equity_security_universe_smoke.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_company_detail.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_cotahist_securities.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_foreign.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+      - "src/ultimate_stock_analyzer/universe/b3_current_security_audit.py"
+      - "src/ultimate_stock_analyzer/universe/b3_security_types.py"
+      - "src/ultimate_stock_analyzer/universe/current_equity_securities.py"
+      - "src/ultimate_stock_analyzer/universe/eligibility.py"
+
+permissions:
+  contents: read
+
+jobs:
+  universe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Build current Brazilian equity security universe
+        run: |
+          python scripts/current_brazilian_equity_security_universe_smoke.py \
+            --workers 4 \
+            --output current-brazilian-equity-security-universe.json
+      - name: Publish compact universe summary
+        if: always()
+        run: |
+          if [ -f current-brazilian-equity-security-universe.json ]; then
+            python - <<'PY'
+          import json
+          with open("current-brazilian-equity-security-universe.json", encoding="utf-8") as handle:
+              data = json.load(handle)
+          universe = data["universe"]
+          print(json.dumps({
+              "year": data["year"],
+              "cotahist_latest_trade_date": data["cotahist_latest_trade_date"],
+              "candidate_company_ids": universe["candidate_company_ids"],
+              "eligible_company_count": universe["eligible_company_count"],
+              "eligible_security_count": universe["eligible_security_count"],
+              "company_status_counts": universe["company_status_counts"],
+              "security_status_counts": universe["security_status_counts"],
+              "review_cases": data["review_cases"],
+          }, ensure_ascii=False, indent=2))
+          PY
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: current-brazilian-equity-security-universe
+          path: current-brazilian-equity-security-universe.json
+          if-no-files-found: error
+          retention-days: 14
