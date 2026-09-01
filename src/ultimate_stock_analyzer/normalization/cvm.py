@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -144,12 +145,19 @@ def attach_document_metadata(
     statement_frame: pd.DataFrame,
     metadata_frame: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Attach filing metadata without synthesizing publication timestamps.
+    """Attach official filing metadata without inventing publication timestamps.
 
     CVM statement members normally do not carry ``ID_DOC``. The yearly DFP/ITR
-    summary member does and is uniquely identified by ``CD_CVM``, ``DT_REFER``
-    and ``VERSAO``. Prefer the direct document-id join when both sides expose it;
-    otherwise use that official filing key. Ambiguous filing metadata fails closed.
+    summary member does, so direct document-id joins remain preferred whenever
+    both sides expose the identifier. Otherwise the official filing key
+    ``CD_CVM + DT_REFER + VERSAO`` is used as a fallback.
+
+    A natural key can legitimately map to multiple official documents. When its
+    metadata is not unique, only field-level consensus is propagated. If
+    ``DT_RECEB`` itself conflicts, all fallback metadata for that key is
+    suppressed so the affected statement rows remain non-PIT instead of choosing
+    an earlier or later publication timestamp. Direct ``ID_DOC`` ambiguity still
+    fails closed because an exact document identifier must be unique.
     """
     if metadata_frame.empty:
         return statement_frame.copy()
@@ -175,9 +183,80 @@ def attach_document_metadata(
     metadata[join_keys[0]] = _normalized_cvm_code(metadata["CD_CVM"])
     metadata[join_keys[1]] = _normalized_reference_date(metadata["DT_REFER"])
     metadata[join_keys[2]] = _normalized_version(metadata["VERSAO"])
+    metadata = _collapse_natural_key_metadata(metadata, join_keys=join_keys)
 
     merged = _merge_document_metadata(statement, metadata, join_keys=join_keys)
     return merged.drop(columns=list(join_keys))
+
+
+def _collapse_natural_key_metadata(
+    metadata_frame: pd.DataFrame,
+    *,
+    join_keys: tuple[str, ...],
+) -> pd.DataFrame:
+    metadata_columns = [*join_keys]
+    metadata_columns.extend(
+        column
+        for column in _METADATA_FIELDS
+        if column in metadata_frame.columns and column not in join_keys
+    )
+    metadata = metadata_frame[metadata_columns].drop_duplicates()
+    if metadata.empty:
+        return metadata
+
+    collapsed: list[dict[str, Any]] = []
+    ambiguous_keys: list[dict[str, Any]] = []
+    publication_time_conflicts = 0
+    metadata_fields = [
+        column for column in _METADATA_FIELDS if column in metadata.columns
+    ]
+
+    for key_values, group in metadata.groupby(
+        list(join_keys),
+        dropna=False,
+        sort=False,
+    ):
+        if not isinstance(key_values, tuple):
+            key_values = (key_values,)
+        row = dict(zip(join_keys, key_values, strict=True))
+        conflicting_fields: list[str] = []
+
+        for field in metadata_fields:
+            distinct = group[field].dropna().drop_duplicates()
+            if len(distinct) == 1:
+                row[field] = distinct.iloc[0]
+            else:
+                row[field] = pd.NA
+                if len(distinct) > 1:
+                    conflicting_fields.append(field)
+
+        if "DT_RECEB" in conflicting_fields:
+            publication_time_conflicts += 1
+            for field in metadata_fields:
+                row[field] = pd.NA
+
+        if conflicting_fields:
+            ambiguous_keys.append(
+                {
+                    **{key: row[key] for key in join_keys},
+                    "fields": tuple(conflicting_fields),
+                }
+            )
+        collapsed.append(row)
+
+    if ambiguous_keys:
+        examples = ambiguous_keys[:3]
+        warnings.warn(
+            "CVM natural-key filing metadata is ambiguous; conflicting fallback "
+            "metadata was suppressed instead of selecting an arbitrary document: "
+            f"count={len(ambiguous_keys)} "
+            f"publication_time_conflicts={publication_time_conflicts} "
+            f"examples={examples}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    return pd.DataFrame(collapsed, columns=metadata_columns)
 
 
 def _merge_document_metadata(

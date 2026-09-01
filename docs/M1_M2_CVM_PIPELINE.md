@@ -31,15 +31,28 @@ Every normalized statement line retains:
 - document type (DFP/ITR);
 - statement and consolidation scope;
 - reference period;
-- CVM document id;
+- CVM document id when it can be attributed safely;
 - document version;
-- CVM receipt timestamp (`DT_RECEB`) when available;
-- `available_from`, equal to the earliest evidenced receipt timestamp;
+- CVM receipt timestamp (`DT_RECEB`) when it can be attributed safely;
+- `available_from`, equal to the evidenced receipt timestamp when attribution is unambiguous;
 - collection timestamp;
 - original source filename.
 
 `point_in_time_lines(..., as_of=...)` excludes observations without an evidenced
 `available_from` timestamp and selects only the latest revision that was available at the cutoff.
+
+### Ambiguous filing metadata
+
+CVM statement members normally do not expose `ID_DOC`, so DFP/ITR publication metadata can require
+a fallback join on `CD_CVM + DT_REFER + VERSAO`. That natural key is not universally unique. If
+multiple official documents share the key, metadata is collapsed only by field-level consensus.
+A conflicting `DT_RECEB` suppresses all fallback document metadata for that key rather than
+choosing the earliest or latest filing. Those statement rows remain usable for non-PIT analysis
+but stay ineligible for PIT snapshots until publication lineage can be evidenced. A direct join on
+an explicit `ID_DOC` remains strict and rejects conflicting metadata for the same document id.
+
+This behavior is intentionally granular: one ambiguous filing does not invalidate unrelated,
+unambiguous statement rows in the same annual archive.
 
 ## Monetary scale
 
