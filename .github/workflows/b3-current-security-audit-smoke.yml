@@ -10,6 +10,7 @@ on:
       - "src/ultimate_stock_analyzer/collectors/b3_cotahist_securities.py"
       - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
       - "src/ultimate_stock_analyzer/universe/b3_current_security_audit.py"
+      - "src/ultimate_stock_analyzer/universe/b3_security_types.py"
       - "src/ultimate_stock_analyzer/domain/master.py"
       - "src/ultimate_stock_analyzer/market/prices.py"
 
@@ -49,7 +50,7 @@ jobs:
               "share_quotation_date_missing": report["share_quotation_date_missing"],
               "companies_with_current_spot_trade": report["companies_with_current_spot_trade"],
               "cotahist_latest_trade_date": report["cotahist_latest_trade_date"],
-              "share_dated_specification_counts": report["share_dated_specification_counts"],
+              "security_type_taxonomy": data["security_type_taxonomy"],
               "review_cases": data["review_cases"],
           }, ensure_ascii=False, indent=2))
           PY

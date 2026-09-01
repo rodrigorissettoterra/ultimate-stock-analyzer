@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +21,10 @@ from ultimate_stock_analyzer.collectors.b3_cotahist_securities import (
 )
 from ultimate_stock_analyzer.universe.b3_current_security_audit import (
     audit_b3_current_security_state,
+)
+from ultimate_stock_analyzer.universe.b3_security_types import (
+    B3SecurityKind,
+    classify_b3_security_specifications,
 )
 
 REVIEW_COMPANY_IDS = (
@@ -120,6 +125,7 @@ def main() -> None:
         row["company_id"]: row
         for row in report_dict["company_evidence"]
     }
+    taxonomy = _taxonomy_profile(report.security_evidence)
     payload = {
         "generated_at": collected_at.isoformat(),
         "year": args.year,
@@ -129,6 +135,7 @@ def main() -> None:
             "B3_INDUSTRY_CLASSIFICATION",
             "B3_LISTED_COMPANIES_GET_DETAIL",
             "B3_COTAHIST",
+            "B3_COTAHIST_ESPECI_TABLE",
         ],
         "classification_unmapped_issuer_codes": list(
             classification_collector.last_unmapped_issuer_codes
@@ -136,14 +143,16 @@ def main() -> None:
         "review_cases": {
             company_id: rows.get(company_id) for company_id in REVIEW_COMPANY_IDS
         },
+        "security_type_taxonomy": taxonomy,
         "report": report_dict,
         "notes": [
             "This artifact is diagnostic only and does not define final security eligibility.",
             "GetDetail is requested by exact codeCVM; classification identity remains canonical cvm:<CD_CVM>.",
             "CNPJ is normalized to a 14-digit validation representation only inside this audit.",
             "COTAHIST evidence is assigned only to exact security codes returned by valid B3 GetDetail identities.",
-            "dateQuotation is treated as B3 share-quotation evidence, not as a ticker-type inference rule.",
-            "No suffix/prefix/name/fuzzy security inference is used.",
+            "B3 ESPECI is classified by documented security semantics, never by ticker digits.",
+            "Subscription receipts (for example PN REC), rights and bonuses are not promoted to the underlying share class.",
+            "Unknown or conflicting ESPECI states fail closed as non-core in this diagnostic taxonomy.",
             "Current evidence is not point-in-time historical evidence.",
         ],
     }
@@ -152,6 +161,64 @@ def main() -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _taxonomy_profile(security_evidence: tuple[object, ...]) -> dict[str, object]:
+    kind_counts: Counter[str] = Counter()
+    core_company_ids: set[str] = set()
+    non_core_company_ids: set[str] = set()
+    conflicts: list[dict[str, object]] = []
+    unknown: list[dict[str, object]] = []
+    observed_codes = 0
+    core_codes = 0
+
+    for item in security_evidence:
+        trade_days = int(getattr(item, "trade_days"))
+        if trade_days <= 0:
+            continue
+        observed_codes += 1
+        result = classify_b3_security_specifications(getattr(item, "specifications"))
+        code = str(getattr(item, "code"))
+        company_id = str(getattr(item, "company_id"))
+        if result.conflict:
+            conflicts.append({
+                "company_id": company_id,
+                "code": code,
+                **result.to_dict(),
+            })
+            non_core_company_ids.add(company_id)
+            continue
+        kind = result.coherent_kind or B3SecurityKind.OTHER_UNKNOWN
+        kind_counts[kind.value] += 1
+        if result.core_equity_security:
+            core_codes += 1
+            core_company_ids.add(company_id)
+        else:
+            non_core_company_ids.add(company_id)
+        if kind == B3SecurityKind.OTHER_UNKNOWN:
+            unknown.append({
+                "company_id": company_id,
+                "code": code,
+                **result.to_dict(),
+            })
+
+    return {
+        "observed_exact_security_codes": observed_codes,
+        "coherent_kind_counts": dict(sorted(kind_counts.items())),
+        "core_equity_security_codes": core_codes,
+        "companies_with_core_equity_trade": len(core_company_ids),
+        "companies_with_any_non_core_trade": len(non_core_company_ids),
+        "security_kind_conflict_count": len(conflicts),
+        "security_kind_conflicts": conflicts[:20],
+        "unknown_security_count": len(unknown),
+        "unknown_security_samples": unknown[:20],
+        "core_equity_kinds": [
+            B3SecurityKind.COMMON_SHARE.value,
+            B3SecurityKind.PREFERRED_SHARE.value,
+            B3SecurityKind.UNIT.value,
+        ],
+        "effect": "diagnostic_only",
+    }
 
 
 def _cnpj14(value: str | None) -> str | None:
