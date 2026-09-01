@@ -22,11 +22,16 @@ def _normalize_text(value: Any) -> str:
     return "".join(ch for ch in text if not unicodedata.combining(ch)).casefold().strip()
 
 
+def _normalize_company_id(value: Any) -> str:
+    return str(value or "").strip().casefold()
+
+
 @dataclass(frozen=True, slots=True)
 class SectorModelDefinition:
     model_id: str
     config_path: Path
     priority: int = 0
+    company_ids: tuple[str, ...] = ()
     sector_contains: tuple[str, ...] = ()
     subsector_contains: tuple[str, ...] = ()
     segment_contains: tuple[str, ...] = ()
@@ -34,6 +39,12 @@ class SectorModelDefinition:
     peer_group_by: tuple[str, ...] = ()
 
     def match_reason(self, row: dict[str, Any]) -> str | None:
+        company_id = _normalize_company_id(row.get("company_id"))
+        if company_id:
+            for configured_company_id in self.company_ids:
+                if company_id == _normalize_company_id(configured_company_id):
+                    return f"company_id:{company_id}"
+
         fields = (
             ("sector", self.sector_contains),
             ("subsector", self.subsector_contains),
@@ -123,11 +134,29 @@ class SectorModelRegistry:
 
 def _definition_from_raw(raw: dict[str, Any], base_dir: Path) -> SectorModelDefinition:
     match = raw.get("match") or {}
+    company_ids = tuple(str(item).strip().casefold() for item in match.get("company_ids", []))
+    for company_id in company_ids:
+        if not company_id.startswith("cvm:"):
+            raise ValueError(
+                "sector model company_ids must use canonical cvm:<CD_CVM> identity: "
+                f"model={raw['id']} company_id={company_id}"
+            )
+        try:
+            int(company_id.split(":", 1)[1])
+        except ValueError as exc:
+            raise ValueError(
+                "invalid canonical sector model company_id: "
+                f"model={raw['id']} company_id={company_id}"
+            ) from exc
+    if len(company_ids) != len(set(company_ids)):
+        raise ValueError(f"duplicate sector model company_ids: model={raw['id']}")
+
     config_path = (base_dir / str(raw["config"])).resolve()
     return SectorModelDefinition(
         model_id=str(raw["id"]),
         config_path=config_path,
         priority=int(raw.get("priority", 0)),
+        company_ids=company_ids,
         sector_contains=tuple(str(item) for item in match.get("sector_contains", [])),
         subsector_contains=tuple(
             str(item) for item in match.get("subsector_contains", [])

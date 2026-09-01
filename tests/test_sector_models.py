@@ -59,6 +59,27 @@ def test_registry_routes_sector_specific_models_and_normalizes_accents() -> None
     assert fallback.reason == "default_fallback"
 
 
+def test_registry_routes_itsa_only_by_exact_canonical_company_id() -> None:
+    registry = SectorModelRegistry.from_yaml(REGISTRY)
+    shared_classification = {
+        "sector": "Financeiro",
+        "subsector": "Holdings Diversificadas",
+        "segment": "Holdings Diversificadas",
+    }
+
+    itsa = registry.select({**shared_classification, "company_id": "cvm:7617"})
+    arandu = registry.select({**shared_classification, "company_id": "cvm:25887"})
+    missing_identity = registry.select(shared_classification)
+
+    assert itsa.model_id == "itsa_holding_abstain"
+    assert itsa.reason == "company_id:cvm:7617"
+    assert itsa.is_fallback is False
+    assert arandu.model_id == "general_corporate"
+    assert arandu.is_fallback is True
+    assert missing_identity.model_id == "general_corporate"
+    assert missing_identity.is_fallback is True
+
+
 def test_b3_gas_utility_does_not_overlap_commodity_model() -> None:
     registry = SectorModelRegistry.from_yaml(REGISTRY)
     row = {

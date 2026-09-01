@@ -120,6 +120,7 @@ def profile_sector_model_coverage(
     for record in records:
         normalized_company_ids.add(record.company_id)
         row = {
+            "company_id": record.company_id,
             "sector": record.sector,
             "subsector": record.subsector,
             "segment": record.segment,

@@ -8,16 +8,17 @@ from ultimate_stock_analyzer.scoring.applicability_review import (
 def test_current_structural_applicability_registry_contains_only_unresolved_model_cases() -> None:
     root = Path(__file__).resolve().parents[1]
     registry = load_structural_applicability_reviews(
-        root / "config/universe/b3_structural_applicability_reviews_v0.3.json"
+        root / "config/universe/b3_structural_applicability_reviews_v0.4.json"
     )
 
-    assert registry.version == "0.3"
+    assert registry.version == "0.4"
     assert registry.effect == "diagnostic_only"
-    assert set(registry.by_company_id) == {"cvm:7617", "cvm:27634"}
+    assert set(registry.by_company_id) == {"cvm:27634"}
     assert {
         review.status for review in registry.reviews
     } == {"GENERAL_CORPORATE_MODEL_REVIEW_REQUIRED"}
 
+    assert "cvm:7617" not in registry.by_company_id  # ITSA: issuer-specific abstention
     assert "cvm:6041" not in registry.by_company_id  # FIGE: explicit structural abstention
     assert "cvm:18759" not in registry.by_company_id  # BSCS: security-universe resolved
     assert "cvm:80195" not in registry.by_company_id  # G2DI: foreign issuer resolved

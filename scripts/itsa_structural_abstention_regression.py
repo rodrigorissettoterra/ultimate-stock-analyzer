@@ -14,8 +14,8 @@ from ultimate_stock_analyzer.orchestration.cvm_ingestion import CVMIngestionServ
 from ultimate_stock_analyzer.scoring.applicability_review import (
     load_structural_applicability_reviews,
 )
-from ultimate_stock_analyzer.scoring.fige_structural_abstention import (
-    evaluate_fige_structural_abstention,
+from ultimate_stock_analyzer.scoring.itsa_structural_abstention import (
+    evaluate_itsa_structural_abstention,
 )
 from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 from ultimate_stock_analyzer.universe.b3_partition import (
@@ -34,8 +34,8 @@ DEFAULT_APPLICABILITY_REVIEWS = (
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate explicit FIGE structural abstention against the live current "
-            "Brazilian-company B3 classification universe."
+            "Validate issuer-specific ITSA structural abstention against the live "
+            "current Brazilian-company B3 classification universe."
         )
     )
     parser.add_argument("--registry", default=DEFAULT_REGISTRY)
@@ -45,7 +45,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="fige-structural-abstention-regression.json",
+        default="itsa-structural-abstention-regression.json",
     )
     args = parser.parse_args()
 
@@ -84,7 +84,7 @@ def main() -> None:
     applicability_reviews = load_structural_applicability_reviews(
         args.applicability_reviews
     )
-    regression = evaluate_fige_structural_abstention(
+    regression = evaluate_itsa_structural_abstention(
         eligible_records,
         registry=registry,
         applicability_reviews=applicability_reviews,
@@ -97,11 +97,13 @@ def main() -> None:
         "current_brazilian_equity_universe": partition.to_dict(),
         "regression": regression.to_dict(),
         "notes": [
-            "The pre-abstention routing baseline is reconstructed by removing only the new abstention definition from the same registry object.",
-            "The live routing delta must contain exactly cvm:6041 and no other eligible company.",
-            "The abstention config contains no scoring metrics, categories, directions, targets, tolerances, weights or thresholds.",
-            "Corporate metric probe values are intentionally varied to prove they cannot affect the FIGE abstention result.",
-            "A historical routing backtest is intentionally not executed because current B3 classification is not revision-aware PIT evidence.",
+            "The pre-abstention baseline is reconstructed by removing only the ITSA issuer-specific abstention definition from the same registry object.",
+            "The live routing delta must contain exactly cvm:7617 and no other eligible company.",
+            "Exact current-segment neighbors remain visible in the artifact to prove ARND, EPAR and SIMH are not captured by the ITSA rule.",
+            "The ITSA abstention config contains no scoring metrics, categories, directions, targets, tolerances, weights or thresholds.",
+            "Corporate metric probe values are intentionally varied to prove they cannot affect the ITSA abstention result.",
+            "Canonical issuer identity is used because the historical segment audit proved the B3 segment is economically heterogeneous despite shared account schema.",
+            "A historical routing backtest is intentionally not executed because current B3 classification/routing is not revision-aware PIT evidence.",
             "The primary AnalyzerService recommendation engine is not changed by this structural routing block.",
         ],
     }
@@ -111,7 +113,7 @@ def main() -> None:
     )
     if not regression.regression_passed:
         raise RuntimeError(
-            "FIGE structural abstention regression failed: "
+            "ITSA structural abstention regression failed: "
             + ", ".join(regression.failures)
         )
 

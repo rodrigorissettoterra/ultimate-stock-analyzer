@@ -1,4 +1,4 @@
-version: "0.6.2"
+version: "0.6.3"
 
 default_model:
   id: general_corporate
@@ -6,6 +6,13 @@ default_model:
   peer_group_by: [sector]
 
 models:
+  - id: itsa_holding_abstain
+    priority: 110
+    config: sectors/itsa_holding_abstain_v0.6.yml
+    peer_group_by: []
+    match:
+      company_ids: [cvm:7617]
+
   - id: banks
     priority: 100
     config: sectors/banks_v0.6.yml
