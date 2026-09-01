@@ -1,0 +1,39 @@
+{
+  "version": "0.2",
+  "effect": "diagnostic_only",
+  "reviews": [
+    {
+      "company_id": "cvm:6041",
+      "issuer_code": "FIGE",
+      "status": "GENERAL_CORPORATE_MODEL_REVIEW_REQUIRED",
+      "reason": "Current B3 sector routing leaves this canonical listed-equity issuer on the general_corporate fallback even though the post-M20 audit identified its financial-intermediation classification as requiring explicit economic-model review.",
+      "evidence_contracts": [
+        "B3_INDUSTRY_CLASSIFICATION",
+        "CVM_CANONICAL_IDENTITY",
+        "B3_CURRENT_CORE_EQUITY_SECURITY_UNIVERSE"
+      ]
+    },
+    {
+      "company_id": "cvm:27634",
+      "issuer_code": "B100",
+      "status": "GENERAL_CORPORATE_MODEL_REVIEW_REQUIRED",
+      "reason": "The post-M20 fallback audit flagged this canonical listed-equity issuer for economic-model review before general_corporate is treated as the final structural contract.",
+      "evidence_contracts": [
+        "B3_INDUSTRY_CLASSIFICATION",
+        "CVM_CANONICAL_IDENTITY",
+        "B3_CURRENT_CORE_EQUITY_SECURITY_UNIVERSE"
+      ]
+    },
+    {
+      "company_id": "cvm:7617",
+      "issuer_code": "ITSA",
+      "status": "GENERAL_CORPORATE_MODEL_REVIEW_REQUIRED",
+      "reason": "The post-M20 fallback audit flagged this canonical listed-equity holding issuer for explicit economic-model review before general_corporate is treated as the final structural contract.",
+      "evidence_contracts": [
+        "B3_INDUSTRY_CLASSIFICATION",
+        "CVM_CANONICAL_IDENTITY",
+        "B3_CURRENT_CORE_EQUITY_SECURITY_UNIVERSE"
+      ]
+    }
+  ]
+}
