@@ -1,0 +1,70 @@
+name: historical-backtest-readiness-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/historical-backtest-readiness-smoke.yml"
+      - "scripts/historical_backtest_readiness_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/readiness.py"
+      - "src/ultimate_stock_analyzer/bootstrap/**"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/bcb_ifdata.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/domain/master.py"
+      - "src/ultimate_stock_analyzer/fundamentals/**"
+      - "src/ultimate_stock_analyzer/market/prices.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+      - "src/ultimate_stock_analyzer/scoring/sector_models.py"
+      - "config/scoring/sector_registry_v0.6.yml"
+      - "config/scoring/sectors/**"
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Resolve bounded completed-year window
+        id: years
+        shell: bash
+        run: |
+          END_YEAR=$(python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).year - 1)')
+          START_YEAR=$((END_YEAR - 1))
+          echo "start=$START_YEAR" >> "$GITHUB_OUTPUT"
+          echo "end=$END_YEAR" >> "$GITHUB_OUTPUT"
+      - name: Run fail-closed historical readiness audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/historical_backtest_readiness_audit.py \
+            --start-year "${{ steps.years.outputs.start }}" \
+            --end-year "${{ steps.years.outputs.end }}" \
+            --ticker PETR4 \
+            --ticker VALE3 \
+            --ticker ITUB4 \
+            --data-dir "${{ runner.temp }}/ultimate-stock-analyzer-readiness" \
+            --output historical-backtest-readiness.json
+      - name: Publish readiness evidence
+        if: always()
+        run: |
+          if [ -f historical-backtest-readiness.json ]; then
+            cat historical-backtest-readiness.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: historical-backtest-readiness
+          path: historical-backtest-readiness.json
+          if-no-files-found: error
+          retention-days: 14

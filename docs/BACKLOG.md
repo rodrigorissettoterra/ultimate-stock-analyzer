@@ -26,12 +26,15 @@
 
 These are validation and operations tasks rather than missing architecture milestones:
 
-- populate a sufficiently complete point-in-time B3/CVM historical dataset;
+- build and validate the historical evidence layer;
   - public-data bootstrap tooling: **implemented**; actual downloaded datasets remain outside Git;
-  - fundamental/publication-timing coverage profiler: **implementation candidate**;
-  - sector applicability still requires B3 sector/subsector/segment enrichment;
-- execute full historical backtests across multiple market regimes;
-- run M16 walk-forward calibration and promote new weights only if OOS gates are met repeatedly;
+  - fundamental/publication-timing coverage profiler: **implemented**;
+  - current B3 sector/subsector/segment enrichment and structural applicability review: **implemented/resolved for the current universe**;
+  - historical backtest readiness audit: **implemented diagnostic gate**;
+  - remaining PIT blockers must be resolved with evidence, not by relaxing backtest rules: current-only B3 sector routing, latest-state specialized history such as IFData, and unadjusted COTAHIST/corporate-action semantics;
+- materialize a sufficiently broad multi-regime local dataset after the readiness blockers above are addressed;
+- execute full M15 historical backtests only on evidence that passes strict point-in-time readiness;
+- run M16 walk-forward calibration and promote new weights only if OOS gates are met repeatedly; data readiness alone never authorizes promotion;
 - automate/schedule production collectors with source-specific monitoring and retry policies;
 - validate real PostgreSQL backup/restore drills and operational recovery objectives;
 - measure data coverage, freshness and source divergence in sustained runs;
