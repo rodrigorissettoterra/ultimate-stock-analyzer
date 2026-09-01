@@ -1,0 +1,45 @@
+name: fige-ifdata-applicability-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/fige-ifdata-applicability-audit-smoke.yml"
+      - "scripts/fige_ifdata_applicability_audit.py"
+      - "src/ultimate_stock_analyzer/scoring/ifdata_applicability_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/bcb_ifdata.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+      - "src/ultimate_stock_analyzer/fundamentals/contracts.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Audit FIGE BCB IFData applicability
+        run: |
+          python scripts/fige_ifdata_applicability_audit.py \
+            --year 2025 \
+            --output fige-ifdata-applicability-audit.json
+      - name: Publish audit summary
+        if: always()
+        run: |
+          if [ -f fige-ifdata-applicability-audit.json ]; then
+            cat fige-ifdata-applicability-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fige-ifdata-applicability-audit
+          path: fige-ifdata-applicability-audit.json
+          if-no-files-found: error
+          retention-days: 14
