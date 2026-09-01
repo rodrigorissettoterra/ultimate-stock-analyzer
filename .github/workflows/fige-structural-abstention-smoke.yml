@@ -1,0 +1,51 @@
+name: fige-structural-abstention-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/fige-structural-abstention-smoke.yml"
+      - "scripts/fige_structural_abstention_regression.py"
+      - "src/ultimate_stock_analyzer/scoring/fige_structural_abstention.py"
+      - "src/ultimate_stock_analyzer/scoring/sector_models.py"
+      - "src/ultimate_stock_analyzer/scoring/structural.py"
+      - "src/ultimate_stock_analyzer/scoring/applicability_review.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_foreign.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+      - "src/ultimate_stock_analyzer/universe/**"
+      - "config/scoring/sector_registry_v0.6.yml"
+      - "config/scoring/sectors/financial_non_prudential_abstain_v0.6.yml"
+      - "config/universe/b3_structural_applicability_reviews_v0.3.json"
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Validate FIGE structural abstention
+        run: |
+          python scripts/fige_structural_abstention_regression.py \
+            --output fige-structural-abstention-regression.json
+      - name: Publish regression evidence
+        if: always()
+        run: |
+          if [ -f fige-structural-abstention-regression.json ]; then
+            cat fige-structural-abstention-regression.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fige-structural-abstention-regression
+          path: fige-structural-abstention-regression.json
+          if-no-files-found: error
+          retention-days: 14

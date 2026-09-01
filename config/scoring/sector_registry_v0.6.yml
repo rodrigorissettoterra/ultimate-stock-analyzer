@@ -1,4 +1,4 @@
-version: "0.6.1"
+version: "0.6.2"
 
 default_model:
   id: general_corporate
@@ -23,6 +23,13 @@ models:
       sector_contains: [insurance, seguros]
       subsector_contains: [insurance, seguradora, seguradoras, seguros, resseguro]
       segment_contains: [insurance, seguros, resseguro]
+
+  - id: financial_non_prudential_abstain
+    priority: 90
+    config: sectors/financial_non_prudential_abstain_v0.6.yml
+    peer_group_by: []
+    match:
+      segment_contains: [outros intermediarios financeiros]
 
   - id: utilities
     priority: 80
