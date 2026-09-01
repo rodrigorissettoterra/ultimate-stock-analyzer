@@ -1,0 +1,52 @@
+name: fige-peer-discovery-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/fige-peer-discovery-audit-smoke.yml"
+      - "scripts/fige_peer_discovery_audit.py"
+      - "src/ultimate_stock_analyzer/scoring/fige_peer_discovery.py"
+      - "src/ultimate_stock_analyzer/fundamentals/fige_financial_contract.py"
+      - "src/ultimate_stock_analyzer/scoring/fige_metric_selection.py"
+      - "src/ultimate_stock_analyzer/scoring/sector_models.py"
+      - "src/ultimate_stock_analyzer/scoring/statement_tree_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_targeted_statements.py"
+      - "src/ultimate_stock_analyzer/universe/**"
+      - "config/scoring/sector_registry_v0.6.yml"
+      - "config/scoring/fige_financial_non_prudential_metric_contract_v0.1.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Discover FIGE peer candidates
+        run: |
+          python scripts/fige_peer_discovery_audit.py \
+            --year 2025 \
+            --output fige-peer-discovery-audit.json
+      - name: Publish peer discovery evidence
+        if: always()
+        run: |
+          if [ -f fige-peer-discovery-audit.json ]; then
+            cat fige-peer-discovery-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fige-peer-discovery-audit
+          path: fige-peer-discovery-audit.json
+          if-no-files-found: error
+          retention-days: 14
