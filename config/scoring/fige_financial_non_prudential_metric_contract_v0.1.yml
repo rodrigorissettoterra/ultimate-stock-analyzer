@@ -1,0 +1,169 @@
+version: "0.1.0"
+contract_id: "fige_financial_non_prudential_metric_selection_v0.1"
+company_id: "cvm:6041"
+effect: "diagnostic_only_no_scoring"
+required_years: [2021, 2022, 2023, 2024, 2025]
+
+peer_policy:
+  current_exact_company_ids: ["cvm:6041"]
+  min_comparable_peers_for_cross_sectional_score: 8
+
+metrics:
+  - name: roa_closing_assets
+    source: annual_metric
+    role: PRIMARY_MODEL_CANDIDATE_UNCALIBRATED
+    required_observations: 5
+    rationale: "Direct return on the total asset base; avoids the 2022 equity-distribution denominator distortion that is more visible in ROE."
+
+  - name: pretax_income_to_gross_intermediation_result
+    source: annual_metric
+    role: PRIMARY_MODEL_CANDIDATE_UNCALIBRATED
+    required_observations: 5
+    rationale: "Measures how much gross financial-intermediation result survives other operating effects before tax using FIGE-specific DRE semantics."
+
+  - name: other_operating_result_to_gross_intermediation_result
+    source: annual_metric
+    role: PRIMARY_MODEL_CANDIDATE_UNCALIBRATED
+    required_observations: 5
+    rationale: "Captures non-intermediation operating burden without inventing EBIT/EBITDA semantics; sign and cross-peer calibration remain open."
+
+  - name: net_income_to_closing_financial_assets
+    source: annual_metric
+    role: SECONDARY_MODEL_CANDIDATE_UNCALIBRATED
+    required_observations: 5
+    rationale: "Economically valid asset-productivity measure, but strongly redundant with ROA because financial assets represent nearly all FIGE assets."
+
+  - name: roe_closing_equity
+    source: annual_metric
+    role: SECONDARY_MODEL_CANDIDATE_UNCALIBRATED
+    required_observations: 5
+    rationale: "Economically valid profitability measure, but equity is sensitive to capital distributions; the 2022 extraordinary distribution requires explicit caution."
+
+  - name: financial_assets_to_assets
+    source: annual_metric
+    role: GUARDRAIL
+    required_observations: 5
+    rationale: "Confirms that the company continues to exhibit a predominantly financial asset structure; not sufficiently discriminating as a quality score by itself."
+
+  - name: securities_to_financial_assets
+    source: annual_metric
+    role: GUARDRAIL
+    required_observations: 5
+    rationale: "Confirms concentration of validated financial assets in securities; useful for model applicability and drift detection."
+
+  - name: equity_to_assets
+    source: annual_metric
+    role: GUARDRAIL
+    required_observations: 5
+    rationale: "Describes unusually equity-funded balance-sheet structure; observed range is too saturated to justify a standalone quality weight from FIGE-only evidence."
+
+  - name: financial_liabilities_to_assets
+    source: annual_metric
+    role: GUARDRAIL
+    required_observations: 5
+    rationale: "Detects structural drift toward material financial leverage; current observations are near zero and therefore primarily a sanity/applicability signal."
+
+  - name: non_continuing_result_gap_to_abs_net_income
+    source: annual_metric
+    role: GUARDRAIL
+    required_observations: 5
+    rationale: "Checks whether reported net income remains reconciled with continuing operations; current series is saturated at zero gap."
+
+  - name: roe_average_equity
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Useful denominator-sensitivity diagnostic; 2021 is intentionally UNKNOWN and the 2022 extraordinary distribution also affects the average balance."
+
+  - name: roa_average_assets
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Useful denominator-sensitivity diagnostic; 2021 is intentionally UNKNOWN and no silent 2020 evidence is imported."
+
+  - name: net_income_to_average_financial_assets
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Useful denominator-sensitivity diagnostic but redundant with ROA/closing financial-asset return and unavailable for the first audited year."
+
+  - name: roe_denominator_sensitivity
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Makes the impact of balance timing and the 2022 distribution visible instead of hiding it in a single profitability ratio."
+
+  - name: roa_denominator_sensitivity
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Makes closing-versus-average asset denominator effects explicit."
+
+  - name: financial_asset_return_denominator_sensitivity
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Makes closing-versus-average financial-asset denominator effects explicit."
+
+  - name: intermediation_expense_to_revenue
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 5
+    rationale: "Semantically valid but empirically saturated at zero in 2021-2025, so it is not a useful FIGE score driver on current evidence."
+
+  - name: fiscal_liabilities_to_assets
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 5
+    rationale: "Useful balance-sheet context, but tax liabilities are not independently interpretable as company quality without a richer tax timing contract."
+
+  - name: gross_intermediation_result_to_closing_assets
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 5
+    rationale: "Economically valid operating-yield context but highly related to profitability measures; retained for evidence rather than duplicated score weight."
+
+  - name: gross_intermediation_result_to_average_assets
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 4
+    rationale: "Average-denominator operating-yield diagnostic; 2021 remains UNKNOWN."
+
+  - name: effective_tax_burden
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 5
+    rationale: "Stable and auditable, but substantially driven by tax rules and therefore not selected as a primary structural-quality metric."
+
+  - name: net_income_to_pretax_income
+    source: annual_metric
+    role: DIAGNOSTIC_ONLY
+    required_observations: 5
+    rationale: "Useful result reconciliation/tax context; not independent enough from tax burden to justify a separate quality weight."
+
+  - name: positive_net_income_year_ratio
+    source: historical_statistic
+    role: DESCRIPTIVE_ONLY
+    required_observations: 1
+    rationale: "Five positive annual observations are useful evidence but insufficient to define a normative score threshold."
+
+  - name: net_income_coefficient_of_variation
+    source: historical_statistic
+    role: DESCRIPTIVE_ONLY
+    required_observations: 1
+    rationale: "Describes five-year earnings variability but needs comparable peers and a longer PIT-safe history before scoring."
+
+  - name: roa_closing_assets_population_stdev
+    source: historical_statistic
+    role: DESCRIPTIVE_ONLY
+    required_observations: 1
+    rationale: "Describes profitability volatility without claiming a score threshold from one issuer."
+
+concepts:
+  - name: balance_growth_quality
+    role: BLOCKED_WITH_CURRENT_CONTRACT
+    rationale: "Raw asset/equity growth is not quality evidence until DMPL, capital changes and ordinary versus extraordinary distributions are normalized."
+
+  - name: dividend_sustainability
+    role: BLOCKED_WITH_CURRENT_CONTRACT
+    rationale: "Requires a FIGE-specific distribution/DMPL contract so recurring payouts can be separated from extraordinary reserve releases."
