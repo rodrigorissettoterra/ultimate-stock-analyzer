@@ -5,6 +5,9 @@ from typing import Any
 
 from ultimate_stock_analyzer.domain.models import AnalysisResult, RedFlag
 from ultimate_stock_analyzer.scoring.engine import ScoringConfig, ScoringEngine
+from ultimate_stock_analyzer.universe.current_equity_securities import (
+    CurrentBrazilianEquitySecurityUniverseReport,
+)
 from ultimate_stock_analyzer.universe.eligibility import (
     BrazilianEquityEligibilityReport,
 )
@@ -31,17 +34,21 @@ class AnalyzerService:
         rows: list[dict[str, Any]],
         *,
         eligibility_report: BrazilianEquityEligibilityReport,
+        security_universe_report: CurrentBrazilianEquitySecurityUniverseReport,
         red_flags: dict[str, list[RedFlag]] | None = None,
     ) -> tuple[list[AnalysisResult], CurrentAnalysisUniverseGateReport]:
-        """Rank a current-state Brazilian-company universe after fail-closed gating.
+        """Rank only exact current B3 core-equity securities of Brazilian issuers.
 
-        This explicit method does not replace ``rank`` because the current CVM
-        jurisdiction registries are not point-in-time eligible for historical use.
+        The explicit current-state path requires both issuer-jurisdiction eligibility
+        and security-level B3 eligibility before any row reaches the scoring engine.
+        It does not replace ``rank`` because these current CVM/B3 controls are not
+        point-in-time eligible for historical use.
         """
 
         eligible_rows, gate_report = partition_current_analysis_rows(
             rows,
             eligibility_report=eligibility_report,
+            security_universe_report=security_universe_report,
         )
         return (
             self.engine.score_universe(eligible_rows, red_flags=red_flags),
