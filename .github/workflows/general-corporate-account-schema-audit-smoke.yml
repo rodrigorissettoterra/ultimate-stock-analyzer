@@ -1,0 +1,47 @@
+name: general-corporate-account-schema-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/general-corporate-account-schema-audit-smoke.yml"
+      - "scripts/general_corporate_account_schema_audit.py"
+      - "src/ultimate_stock_analyzer/scoring/account_schema_audit.py"
+      - "src/ultimate_stock_analyzer/fundamentals/cvm_accounts.py"
+      - "src/ultimate_stock_analyzer/domain/master.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm.py"
+      - "src/ultimate_stock_analyzer/normalization/cvm.py"
+      - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .
+      - name: Audit general-corporate CVM account schema
+        run: |
+          python scripts/general_corporate_account_schema_audit.py \
+            --year 2025 \
+            --output general-corporate-account-schema-audit.json
+      - name: Publish audit summary
+        if: always()
+        run: |
+          if [ -f general-corporate-account-schema-audit.json ]; then
+            cat general-corporate-account-schema-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: general-corporate-account-schema-audit
+          path: general-corporate-account-schema-audit.json
+          if-no-files-found: error
+          retention-days: 14
