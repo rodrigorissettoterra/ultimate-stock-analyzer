@@ -1,0 +1,37 @@
+name: cvm-ambiguous-filing-metadata-smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-ambiguous-filing-metadata-smoke.yml"
+      - "scripts/cvm_ambiguous_filing_metadata_smoke.py"
+      - "src/ultimate_stock_analyzer/normalization/cvm.py"
+      - "tests/test_cvm_normalization.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Validate official 2024 ambiguity fail-closed behavior
+        run: |
+          python scripts/cvm_ambiguous_filing_metadata_smoke.py \
+            --year 2024 \
+            --output cvm-ambiguous-filing-metadata-smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cvm-ambiguous-filing-metadata-evidence
+          path: cvm-ambiguous-filing-metadata-smoke.json
+          if-no-files-found: error
+          retention-days: 14

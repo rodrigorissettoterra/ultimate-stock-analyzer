@@ -22,7 +22,7 @@ def load_company_statements_from_archive(
     collected_at: datetime,
     collector: CVMCollector | None = None,
 ) -> list[FinancialStatementLine]:
-    """Normalize one CVM issuer before unrelated metadata can affect the merge."""
+    """Normalize one CVM issuer and reject ambiguous filing lineage."""
 
     source = collector or CVMCollector()
     document = document_type.upper()
@@ -44,7 +44,11 @@ def load_company_statements_from_archive(
         frame = _filter_cvm_code(frame, cvm_code)
         if frame.empty:
             continue
-        frame = attach_document_metadata(frame, metadata)
+        frame = attach_document_metadata(
+            frame,
+            metadata,
+            strict_natural_key=True,
+        )
         output.extend(
             normalize_statement(
                 frame,
