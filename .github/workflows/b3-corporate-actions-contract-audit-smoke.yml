@@ -1,0 +1,75 @@
+name: b3-corporate-actions-contract-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b3-corporate-actions-contract-audit-smoke.yml"
+      - "scripts/b3_corporate_actions_contract_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_dividends.py"
+      - "src/ultimate_stock_analyzer/backtesting/models.py"
+      - "src/ultimate_stock_analyzer/backtesting/returns.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Audit live B3 corporate-action contract
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/b3_corporate_actions_contract_audit.py \
+            --issuing-company ITSA \
+            --issuing-company MGLU \
+            --output b3-corporate-actions-contract-audit.json
+      - name: Validate fail-closed evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("b3-corporate-actions-contract-audit.json").read_text(encoding="utf-8")
+          )
+          if report["effect"] != "diagnostic_only_no_price_adjustment_or_backtest_promotion":
+              raise SystemExit("unexpected audit effect")
+          if report["stock_action_count"] < 1:
+              raise SystemExit("bounded B3 sample returned no stock actions")
+          supported = {"BONIFICACAO", "DESDOBRAMENTO", "GRUPAMENTO"}
+          if not supported.intersection(report["observed_stock_action_labels"]):
+              raise SystemExit("bounded B3 sample exposed no supported stock-action label")
+          if report["raw_factor_used_as_share_ratio_without_complete_factor"]:
+              raise SystemExit("raw factor was unsafely promoted to share ratio")
+          if report["share_action_conversion_applied"]:
+              raise SystemExit("audit block must not create ShareAction events")
+          if report["price_adjustment_applied"]:
+              raise SystemExit("audit block must not adjust COTAHIST prices")
+          if report["strict_backtest_price_readiness_changed"]:
+              raise SystemExit("audit block must not promote historical readiness")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f b3-corporate-actions-contract-audit.json ]; then
+            cat b3-corporate-actions-contract-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b3-corporate-actions-contract-evidence
+          path: b3-corporate-actions-contract-audit.json
+          if-no-files-found: error
+          retention-days: 14
