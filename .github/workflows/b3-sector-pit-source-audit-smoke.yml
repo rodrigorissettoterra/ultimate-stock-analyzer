@@ -1,0 +1,86 @@
+name: b3-sector-pit-source-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b3-sector-pit-source-audit-smoke.yml"
+      - "scripts/b3_sector_pit_source_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_sector_pit_source_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live B3 sector PIT source audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/b3_sector_pit_source_audit.py \
+            --start-year 2024 \
+            --end-year 2025 \
+            --output b3-sector-pit-source-audit.json
+      - name: Validate fail-closed temporal boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("b3-sector-pit-source-audit.json").read_text(encoding="utf-8")
+          )
+          if report["effect"] != "diagnostic_only_sector_pit_source_no_routing_change":
+              raise SystemExit("unexpected sector PIT source-audit effect")
+          if report["classification_record_count"] <= 0:
+              raise SystemExit("B3 workbook returned no classification records")
+          if report["workbook_size_bytes"] <= 0 or len(report["workbook_sha256"]) != 64:
+              raise SystemExit("workbook provenance is incomplete")
+          required = {
+              "B3_CLASSIFICATION_CURRENT_SNAPSHOT_ONLY",
+              "B3_CLASSIFICATION_AS_OF_CONTRACT_UNAVAILABLE",
+              "B3_CLASSIFICATION_REVISION_HISTORY_UNAVAILABLE",
+              "HISTORICAL_SECTOR_ROUTING_SOURCE_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required historical sector blockers disappeared")
+          if report["contractual_as_of_date"] is not None:
+              raise SystemExit("current workbook has no contractual historical as-of date")
+          if report["historical_snapshot_count"] != 0:
+              raise SystemExit("public current endpoint did not supply historical snapshots")
+          if report["requested_years_covered"] != 0:
+              raise SystemExit("current workbook cannot cover past requested years")
+          if not report["current_snapshot_point_in_time_from_collection"]:
+              raise SystemExit("collection timestamp should support forward capture")
+          if report["historical_backfill_ready"]:
+              raise SystemExit("current snapshot cannot backfill history")
+          if report["sector_routing_point_in_time_ready"]:
+              raise SystemExit("historical sector routing must remain blocked")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("diagnostic audit must not promote readiness")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f b3-sector-pit-source-audit.json ]; then
+            cat b3-sector-pit-source-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b3-sector-pit-source-evidence
+          path: b3-sector-pit-source-audit.json
+          if-no-files-found: error
+          retention-days: 14
