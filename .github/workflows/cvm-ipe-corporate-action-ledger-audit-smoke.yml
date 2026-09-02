@@ -1,0 +1,108 @@
+name: cvm-ipe-corporate-action-ledger-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-ipe-corporate-action-ledger-audit-smoke.yml"
+      - "scripts/cvm_ipe_corporate_action_ledger_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_corporate_action_ledger.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_dividends.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_ipe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live CVM IPE corporate-action ledger audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_ipe_corporate_action_ledger_audit.py \
+            --sample MGLU:MGLU3:22470 \
+            --sample ITSA:ITSA4:7617 \
+            --sample B3SA:B3SA3:21610 \
+            --sample AMER:AMER3:20990 \
+            --start-year 2024 \
+            --end-year 2025 \
+            --output cvm-ipe-corporate-action-ledger-audit.json
+      - name: Validate diagnostic boundaries and official identities
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-ipe-corporate-action-ledger-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["effect"] != "diagnostic_only_cvm_ipe_ledger_no_readiness_change":
+              raise SystemExit("unexpected ledger-audit effect")
+          if report["sample_count"] != 4:
+              raise SystemExit("unexpected live sample count")
+          expected_ids = {"cvm:22470", "cvm:7617", "cvm:21610", "cvm:20990"}
+          if {sample["company_id"] for sample in report["samples"]} != expected_ids:
+              raise SystemExit("unexpected canonical CVM identities")
+          if report["issuer_document_count"] <= 0:
+              raise SystemExit("official CVM IPE archive returned no issuer documents")
+          if report["observed_event_count"] <= 0:
+              raise SystemExit("B3 returned no observed corporate events")
+          if report["events_with_same_reference_date_documents"] <= 0:
+              raise SystemExit("CVM IPE corroborated no observed event reference date")
+          required = {
+              "CVM_IPE_DOCUMENTS_UNSTRUCTURED",
+              "CVM_IPE_SECURITY_CLASS_SCOPE_UNPROVEN",
+              "CVM_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+              "STRUCTURED_EVENT_HISTORY_COMPLETENESS_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required fail-closed blockers disappeared")
+          if report["structured_event_terms_available"]:
+              raise SystemExit("IPE metadata cannot be treated as structured event terms")
+          if report["security_class_resolution_proven"]:
+              raise SystemExit("issuer-level IPE metadata cannot prove security class")
+          if report["historical_event_source_completeness_proven"]:
+              raise SystemExit("document corroboration cannot prove structured completeness")
+          if report["event_aware_return_path_ready"]:
+              raise SystemExit("unproven completeness must block the return path")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("diagnostic audit must not promote readiness")
+          if report["price_series_blocker_removed"]:
+              raise SystemExit("price-series blocker must remain unchanged")
+          for audit in report["audits"]:
+              if not audit["company_id"].startswith("cvm:"):
+                  raise SystemExit("ledger lost canonical CVM identity")
+              for corroboration in audit["corroborations"]:
+                  approved_on = corroboration["event"]["approved_on"]
+                  for document in corroboration["same_reference_date_documents"]:
+                      if document["company_id"] != audit["company_id"]:
+                          raise SystemExit("cross-issuer document contamination")
+                      if document["reference_date"] != approved_on:
+                          raise SystemExit("non-exact reference date was inferred")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f cvm-ipe-corporate-action-ledger-audit.json ]; then
+            cat cvm-ipe-corporate-action-ledger-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-ipe-corporate-action-ledger-evidence
+          path: cvm-ipe-corporate-action-ledger-audit.json
+          if-no-files-found: error
+          retention-days: 14
