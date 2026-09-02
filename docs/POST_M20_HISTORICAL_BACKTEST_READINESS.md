@@ -26,6 +26,8 @@ For one verified `BootstrapDataset`, the report includes:
 
 - fundamental company-year count;
 - company-years with 100% point-in-time critical accounting coverage;
+- count and exact attribution of company-years with incomplete fundamental PIT coverage;
+- for each fundamental PIT gap: exact company ID, fiscal year, tickers, accounting contract, applicability, sector model, missing critical inputs, untimed critical inputs and cause codes;
 - longitudinal pair readiness;
 - current sector-model resolution count;
 - specialized accounting contracts still missing;
@@ -40,6 +42,23 @@ For one verified `BootstrapDataset`, the report includes:
 
 The report is sanitized. Raw CVM/B3/BCB payloads remain only inside the temporary/local bootstrap data directory and are not uploaded by the readiness workflow.
 
+### Fundamental PIT gap attribution
+
+`FUNDAMENTAL_POINT_IN_TIME_COVERAGE_INCOMPLETE` is intentionally a summary blocker. It does not necessarily identify an independent source defect.
+
+Schema `1.1` adds `fundamental_point_in_time_gaps` so the audit can distinguish:
+
+```text
+CRITICAL_INPUTS_MISSING
+CRITICAL_INPUTS_NOT_POINT_IN_TIME
+SPECIALIZED_EVIDENCE_NOT_POINT_IN_TIME
+UNATTRIBUTED_POINT_IN_TIME_GAP
+```
+
+For bank company-years using the verified IFData contract, latest-state IFData evidence is represented by both the existing `BANK_EVIDENCE_NOT_POINT_IN_TIME` source blocker and a company-year gap attributed as `SPECIALIZED_EVIDENCE_NOT_POINT_IN_TIME`. This is deliberate diagnostic overlap: the first identifies the source-level limitation, while the second identifies exactly which fundamental company-years inherit it.
+
+The live audit passes the complete list of `FundamentalCoverageRecord` objects into the readiness gate and requires the number of detailed gaps to match the summary count. A mismatch fails rather than silently publishing a partial attribution.
+
 ## Current expected blockers
 
 For the current source contract, a bounded live smoke is expected to expose at least:
@@ -50,7 +69,7 @@ BANK_EVIDENCE_NOT_POINT_IN_TIME
 PRICE_SERIES_UNADJUSTED_FOR_CORPORATE_ACTIONS
 ```
 
-`FUNDAMENTAL_POINT_IN_TIME_COVERAGE_INCOMPLETE` can also appear when a specialized company-year depends on latest-state evidence such as IFData.
+`FUNDAMENTAL_POINT_IN_TIME_COVERAGE_INCOMPLETE` can also appear when a specialized company-year depends on latest-state evidence such as IFData. The granular attribution makes clear when this is the same underlying source limitation rather than a separate CVM publication-timing failure.
 
 These blockers must **not** be removed by weakening M15 rules. They are resolved only by obtaining revision-aware historical evidence or by supplying a correctly adjusted/event-aware price history.
 
@@ -62,7 +81,7 @@ The GitHub Action runs a deliberately bounded two-completed-year window for:
 - `VALE3` — general corporate path;
 - `ITUB4` — bank/IFData path.
 
-It requires complete FCA security and COTAHIST ticker/year presence for the bounded sample, then succeeds only if the known non-PIT/unadjusted source blockers are detected. In other words, **green means the audit failed closed correctly**, not that production backtesting is now approved.
+It requires complete FCA security and COTAHIST ticker/year presence for the bounded sample, then succeeds only if the known non-PIT/unadjusted source blockers are detected. It also requires complete company-year attribution for every fundamental PIT gap. In other words, **green means the audit failed closed correctly and explained the failure coherently**, not that production backtesting is now approved.
 
 ## Relationship to M15/M16
 

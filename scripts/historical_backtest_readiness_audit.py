@@ -6,8 +6,10 @@ from pathlib import Path
 
 from ultimate_stock_analyzer.backtesting.readiness import (
     BANK_EVIDENCE_NOT_POINT_IN_TIME,
+    FUNDAMENTAL_POINT_IN_TIME_COVERAGE_INCOMPLETE,
     PRICE_SERIES_UNADJUSTED_FOR_CORPORATE_ACTIONS,
     SECTOR_ROUTING_NOT_POINT_IN_TIME,
+    SPECIALIZED_EVIDENCE_NOT_POINT_IN_TIME,
     audit_historical_backtest_readiness,
 )
 from ultimate_stock_analyzer.bootstrap.coverage import FundamentalCoverageProfiler
@@ -64,7 +66,7 @@ def main() -> None:
     )
     dataset = BootstrapDataset(data_dir / "bootstrap" / manifest.run_id)
     registry = SectorModelRegistry.from_yaml(args.registry)
-    _records, coverage = FundamentalCoverageProfiler(
+    records, coverage = FundamentalCoverageProfiler(
         dataset,
         sector_registry=registry,
     ).analyze(generated_at=collected_at)
@@ -73,6 +75,7 @@ def main() -> None:
         dataset,
         coverage,
         generated_at=collected_at,
+        coverage_records=records,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -101,6 +104,29 @@ def main() -> None:
         raise RuntimeError("historical security history is incomplete for bounded smoke tickers")
     if report.expected_ticker_years != report.price_ticker_years:
         raise RuntimeError("historical price history is incomplete for bounded smoke tickers")
+
+    expected_gap_count = (
+        report.fundamental_company_years
+        - report.point_in_time_critical_complete_company_years
+    )
+    if report.fundamental_point_in_time_gap_count != expected_gap_count:
+        raise RuntimeError("fundamental PIT gap count is inconsistent with coverage summary")
+    if not report.fundamental_point_in_time_gap_details_complete:
+        raise RuntimeError("fundamental PIT gap details were not fully attributed")
+    if len(report.fundamental_point_in_time_gaps) != expected_gap_count:
+        raise RuntimeError("fundamental PIT gap details are incomplete")
+
+    if FUNDAMENTAL_POINT_IN_TIME_COVERAGE_INCOMPLETE in report.blockers:
+        causes = {
+            cause
+            for gap in report.fundamental_point_in_time_gaps
+            for cause in gap.causes
+        }
+        if SPECIALIZED_EVIDENCE_NOT_POINT_IN_TIME not in causes:
+            raise RuntimeError(
+                "bounded bank sample has a fundamental PIT gap without specialized "
+                "evidence attribution"
+            )
 
 
 if __name__ == "__main__":
