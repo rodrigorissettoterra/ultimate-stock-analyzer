@@ -1,0 +1,119 @@
+name: cvm-ipe-pillar3-pdf-content-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-ipe-pillar3-pdf-content-audit-smoke.yml"
+      - "pyproject.toml"
+      - "scripts/cvm_ipe_pillar3_pdf_content_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_pdf_content.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_ipe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project audit dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[audit]"
+      - name: Run live Pillar 3 PDF content audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_ipe_pillar3_pdf_content_audit.py \
+            --cvm-code 19348 \
+            --reference-date 2024-12-31 \
+            --reference-date 2025-12-31 \
+            --output cvm-ipe-pillar3-pdf-content-audit.json
+      - name: Validate versioned PDF evidence and fail-closed readiness
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-ipe-pillar3-pdf-content-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["effect"] != "diagnostic_only_pillar3_pdf_validation_no_bank_readiness_change":
+              raise SystemExit("unexpected Pillar 3 PDF audit effect")
+          if report["company_id"] != "cvm:19348":
+              raise SystemExit("unexpected canonical Itaú CVM identity")
+          if report["observed_filing_count"] != 4:
+              raise SystemExit("expected two observed versions for each requested annual period")
+          if report["covered_reference_period_count"] != 2:
+              raise SystemExit("requested prudential periods are not both covered")
+          if report["periods_with_multiple_observed_filings"] != 2:
+              raise SystemExit("expected explicit re-presentation evidence for both periods")
+          if not report["pdf_content_validated"]:
+              raise SystemExit("official RAD PDF content was not fully validated")
+          if not report["prudential_metric_coverage_proven"]:
+              raise SystemExit("KM1 prudential metric labels were not complete in every PDF")
+          if report["validated_pdf_count"] != 4 or report["metrics_complete_pdf_count"] != 4:
+              raise SystemExit("expected all four versioned PDFs to pass content/metric checks")
+
+          expected_dates = {"2024-12-31", "2025-12-31"}
+          observations = report["observations"]
+          if {item["prudential_reference_date"] for item in observations} != expected_dates:
+              raise SystemExit("unexpected PDF prudential reference periods")
+          protocols = {item["delivery_protocol"] for item in observations}
+          if len(protocols) != 4:
+              raise SystemExit("versioned PDF observations lost unique delivery protocols")
+          for reference_date in expected_dates:
+              versions = sorted(
+                  item["version"]
+                  for item in observations
+                  if item["prudential_reference_date"] == reference_date
+              )
+              if versions != [1, 2]:
+                  raise SystemExit(f"unexpected observed version chain for {reference_date}: {versions}")
+          for item in observations:
+              if item["page_count"] <= 0 or item["size_bytes"] <= 0:
+                  raise SystemExit("invalid PDF provenance")
+              if len(item["pdf_sha256"]) != 64 or len(item["extracted_text_sha256"]) != 64:
+                  raise SystemExit("PDF/text SHA-256 provenance missing")
+              if not item["reference_period_detected"] or not item["km1_detected"]:
+                  raise SystemExit("PDF identity/KM1 evidence incomplete")
+              if item["missing_metric_keys"]:
+                  raise SystemExit("required prudential metric label missing")
+
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required bank/revision blockers disappeared")
+          forbidden_true = (
+              "revision_history_completeness_proven",
+              "historical_prudential_source_ready",
+              "bank_evidence_point_in_time_ready",
+              "readiness_promotion_allowed",
+          )
+          if any(report[field] for field in forbidden_true):
+              raise SystemExit("PDF validation incorrectly promoted bank readiness")
+          PY
+      - name: Publish PDF content evidence
+        if: always()
+        run: |
+          if [ -f cvm-ipe-pillar3-pdf-content-audit.json ]; then
+            cat cvm-ipe-pillar3-pdf-content-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-ipe-pillar3-pdf-content-evidence
+          path: cvm-ipe-pillar3-pdf-content-audit.json
+          if-no-files-found: error
+          retention-days: 14
