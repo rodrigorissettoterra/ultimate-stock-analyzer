@@ -1,0 +1,87 @@
+name: b3-share-action-conversion-regression-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b3-share-action-conversion-regression-smoke.yml"
+      - "scripts/b3_share_action_conversion_regression.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_share_action_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/corporate_action_factor_validation.py"
+      - "src/ultimate_stock_analyzer/backtesting/returns.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
+      - "src/ultimate_stock_analyzer/market/prices.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live ShareAction conversion regression
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/b3_share_action_conversion_regression.py \
+            --sample MGLU:MGLU3 \
+            --sample ITSA:ITSA4 \
+            --sample B3SA:B3SA3 \
+            --sample AMER:AMER3 \
+            --output b3-share-action-conversion-regression.json
+      - name: Validate conversion and economic regression evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("b3-share-action-conversion-regression.json").read_text(encoding="utf-8")
+          )
+          expected_labels = {"BONIFICACAO", "DESDOBRAMENTO", "GRUPAMENTO"}
+          if report["effect"] != "share_action_conversion_contract_only_no_readiness_promotion":
+              raise SystemExit("unexpected conversion effect")
+          if report["converted_event_count"] < 6:
+              raise SystemExit("too few validated ShareAction conversions")
+          if report["economic_regression_count"] != report["converted_event_count"]:
+              raise SystemExit("every converted event must have an economic regression")
+          if report["economic_regression_improved_count"] != report["economic_regression_count"]:
+              raise SystemExit("event-aware return did not improve every converted event")
+          for label in expected_labels:
+              if report["converted_event_count_by_label"].get(label, 0) < 2:
+                  raise SystemExit(f"insufficient converted events for {label}")
+              if report["converted_issuer_count_by_label"].get(label, 0) < 2:
+                  raise SystemExit(f"insufficient converted issuers for {label}")
+          if report["max_absolute_event_aware_return"] is None:
+              raise SystemExit("missing economic return evidence")
+          if report["max_absolute_event_aware_return"] > 0.25:
+              raise SystemExit("event-aware return remains implausibly discontinuous")
+          if report["price_adjustment_applied"]:
+              raise SystemExit("conversion contract must not adjust prices")
+          if report["historical_backtest_readiness_changed"]:
+              raise SystemExit("conversion contract must not promote readiness")
+          if report["price_series_blocker_removed"]:
+              raise SystemExit("price blocker must remain until integration is separately validated")
+          PY
+      - name: Publish regression evidence
+        if: always()
+        run: |
+          if [ -f b3-share-action-conversion-regression.json ]; then
+            cat b3-share-action-conversion-regression.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b3-share-action-conversion-regression-evidence
+          path: b3-share-action-conversion-regression.json
+          if-no-files-found: error
+          retention-days: 14
