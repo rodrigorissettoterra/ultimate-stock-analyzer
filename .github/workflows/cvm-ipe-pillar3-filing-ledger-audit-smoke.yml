@@ -1,0 +1,114 @@
+name: cvm-ipe-pillar3-filing-ledger-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-ipe-pillar3-filing-ledger-audit-smoke.yml"
+      - "scripts/cvm_ipe_pillar3_filing_ledger_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_ipe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live CVM IPE Pillar 3 filing-ledger audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_ipe_pillar3_filing_ledger_audit.py \
+            --cvm-code 19348 \
+            --reference-date 2024-12-31 \
+            --reference-date 2025-12-31 \
+            --output cvm-ipe-pillar3-filing-ledger-audit.json
+      - name: Validate official filing evidence and fail-closed boundaries
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-ipe-pillar3-filing-ledger-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["effect"] != "diagnostic_only_cvm_ipe_pillar3_ledger_no_readiness_change":
+              raise SystemExit("unexpected Pillar 3 audit effect")
+          if report["company_id"] != "cvm:19348":
+              raise SystemExit("unexpected canonical Itaú CVM identity")
+          if report["issuer_document_count"] <= 0:
+              raise SystemExit("official CVM IPE archive returned no issuer documents")
+          if report["pillar3_candidate_count"] <= 0:
+              raise SystemExit("official CVM IPE archive returned no Pillar 3 candidates")
+          if report["covered_reference_period_count"] != 2:
+              raise SystemExit("requested annual Pillar 3 periods were not both observed")
+          if not report["observed_filing_timeline_available"]:
+              raise SystemExit("requested filing timelines lack protocol/download evidence")
+          if len(report["source_archives"]) < 2:
+              raise SystemExit("expected 2025 and 2026 CVM IPE archive snapshots")
+          for archive in report["source_archives"]:
+              if len(archive["sha256"]) != 64 or archive["size_bytes"] <= 0:
+                  raise SystemExit("CVM IPE archive provenance is incomplete")
+          expected_dates = {"2024-12-31", "2025-12-31"}
+          timelines = {
+              item["prudential_reference_date"]: item for item in report["timelines"]
+          }
+          if set(timelines) != expected_dates:
+              raise SystemExit("unexpected prudential reference periods")
+          for reference_date in expected_dates:
+              timeline = timelines[reference_date]
+              if timeline["filing_count"] <= 0:
+                  raise SystemExit(f"no filing observed for {reference_date}")
+              for filing in timeline["filings"]:
+                  document = filing["document"]
+                  if document["company_id"] != "cvm:19348":
+                      raise SystemExit("cross-issuer filing contamination")
+                  if not document["delivery_protocol"]:
+                      raise SystemExit("observed filing lacks delivery protocol")
+                  if not document["download_url"]:
+                      raise SystemExit("observed filing lacks official RAD URL")
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+              "PILLAR3_PDF_CONTENT_UNVALIDATED",
+              "PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required fail-closed blockers disappeared")
+          forbidden_true = (
+              "revision_history_completeness_proven",
+              "pdf_content_validated",
+              "prudential_metric_coverage_proven",
+              "historical_prudential_source_ready",
+              "bank_evidence_point_in_time_ready",
+              "readiness_promotion_allowed",
+          )
+          if any(report[field] for field in forbidden_true):
+              raise SystemExit("diagnostic evidence incorrectly promoted bank readiness")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f cvm-ipe-pillar3-filing-ledger-audit.json ]; then
+            cat cvm-ipe-pillar3-filing-ledger-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-ipe-pillar3-filing-ledger-evidence
+          path: cvm-ipe-pillar3-filing-ledger-audit.json
+          if-no-files-found: error
+          retention-days: 14
