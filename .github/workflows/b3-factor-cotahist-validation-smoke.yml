@@ -34,8 +34,10 @@ jobs:
           python scripts/b3_corporate_action_factor_validation.py \
             --sample MGLU:MGLU3 \
             --sample ITSA:ITSA4 \
+            --sample B3SA:B3SA3 \
+            --sample AMER:AMER3 \
             --output b3-factor-cotahist-validation.json
-      - name: Validate diagnostic-only evidence
+      - name: Validate diagnostic-only evidence breadth
         run: |
           python - <<'PY'
           import json
@@ -51,10 +53,31 @@ jobs:
               raise SystemExit("bounded sample did not expose all supported factor labels")
           if not expected_labels.issubset(set(report["labels_with_price_evidence"])):
               raise SystemExit("bounded sample lacks raw COTAHIST windows for supported labels")
-          if report["evaluated_event_count"] < 4:
-              raise SystemExit("too few corporate-action events were evaluated")
-          if report["raw_price_bar_count"] < 1:
-              raise SystemExit("no raw COTAHIST price evidence was loaded")
+          summaries = {item["label"]: item for item in report["label_summaries"]}
+          missing = expected_labels - summaries.keys()
+          if missing:
+              raise SystemExit(f"missing label summaries: {sorted(missing)}")
+          not_ready = {
+              label: summaries[label]
+              for label in sorted(expected_labels)
+              if not summaries[label]["promotion_ready"]
+          }
+          if not_ready:
+              raise SystemExit(
+                  "bounded evidence breadth is still insufficient: "
+                  + json.dumps(not_ready, sort_keys=True)
+              )
+          expected_candidates = {
+              "BONIFICACAO": "ONE_PLUS_FACTOR_PERCENT",
+              "DESDOBRAMENTO": "ONE_PLUS_FACTOR_PERCENT",
+              "GRUPAMENTO": "DIRECT_FACTOR",
+          }
+          for label, expected in expected_candidates.items():
+              if summaries[label]["dominant_candidate"] != expected:
+                  raise SystemExit(
+                      f"unexpected dominant candidate for {label}: "
+                      f"{summaries[label]['dominant_candidate']}"
+                  )
           if report["adjusted_price_bar_count"] != 0:
               raise SystemExit("factor audit must use raw, unadjusted COTAHIST")
           if report["share_action_conversion_applied"]:
