@@ -52,17 +52,44 @@ The diagnostic label summary requires at least:
 - 2 different issuing companies;
 
 before `promotion_ready` can become true for one label. Even then, this flag is only evidence for a
-future implementation block. This block never installs the formula into backtesting.
+future implementation block. This audit never installs the formula into backtesting.
 
-## Bounded live sample
+## Initial live evidence
 
-The smoke uses:
+The first bounded sample used `MGLU:MGLU3` and `ITSA:ITSA4` and established:
 
-- `MGLU:MGLU3`, because its current B3 history includes bonus, reverse-split and split events;
-- `ITSA:ITSA4`, adding a second issuer and an identity cross-check for bonus events.
+- `BONIFICACAO` — 2 identity-matched events across 2 issuers, both favoring
+  `ONE_PLUS_FACTOR_PERCENT`; diagnostic `promotion_ready=true`;
+- `DESDOBRAMENTO` — 1 MGLU event favoring `ONE_PLUS_FACTOR_PERCENT`; insufficient issuer breadth;
+- `GRUPAMENTO` — 1 MGLU event favoring `DIRECT_FACTOR`; insufficient issuer breadth;
+- the ITSA ordinary-share bonus event is rejected by ISIN when the evaluated ticker is `ITSA4`.
 
-COTAHIST years are resolved from the B3 event dates and downloaded only for the required tickers.
-The artifact retains every evaluated event, all candidate ratios/errors and label summaries.
+No formula was promoted from that evidence.
+
+## Evidence-breadth extension
+
+The live smoke is expanded with two independent events selected to avoid simultaneous-action
+confounding:
+
+- `B3SA:B3SA3` adds an independent split event;
+- `AMER:AMER3` adds an independent reverse-split event.
+
+The complete bounded sample is therefore:
+
+- `MGLU:MGLU3`;
+- `ITSA:ITSA4`;
+- `B3SA:B3SA3`;
+- `AMER:AMER3`.
+
+The smoke now requires all three supported labels to meet the existing 2-event / 2-issuer evidence
+rule and requires their dominant candidates to remain:
+
+- `BONIFICACAO -> ONE_PLUS_FACTOR_PERCENT`;
+- `DESDOBRAMENTO -> ONE_PLUS_FACTOR_PERCENT`;
+- `GRUPAMENTO -> DIRECT_FACTOR`.
+
+If any label fails that breadth or candidate-consistency rule, the workflow fails closed. COTAHIST
+years are resolved from the B3 event dates and downloaded only for the required tickers.
 
 ## Non-effects
 
@@ -78,6 +105,6 @@ This block does **not**:
 
 ## Next step
 
-Inspect the live artifact. A label-specific transformation can move to an implementation contract
-only after the observed events are coherent enough for the label-level evidence rule. Unsupported
-stock events and subscription rights remain fail-closed regardless of factor behavior.
+Only if the expanded live artifact confirms the label-specific formulas with the required issuer
+breadth should a separate implementation-contract block convert supported B3 stock actions into
+`ShareAction` objects. Unsupported stock events and subscription rights remain fail-closed.
