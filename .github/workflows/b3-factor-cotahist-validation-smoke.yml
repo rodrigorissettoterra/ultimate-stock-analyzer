@@ -1,0 +1,81 @@
+name: b3-factor-cotahist-validation-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/b3-factor-cotahist-validation-smoke.yml"
+      - "scripts/b3_corporate_action_factor_validation.py"
+      - "src/ultimate_stock_analyzer/backtesting/corporate_action_factor_validation.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_dividends.py"
+      - "src/ultimate_stock_analyzer/market/prices.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Validate B3 factors against raw COTAHIST discontinuities
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/b3_corporate_action_factor_validation.py \
+            --sample MGLU:MGLU3 \
+            --sample ITSA:ITSA4 \
+            --output b3-factor-cotahist-validation.json
+      - name: Validate diagnostic-only evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("b3-factor-cotahist-validation.json").read_text(encoding="utf-8")
+          )
+          expected_labels = {"BONIFICACAO", "DESDOBRAMENTO", "GRUPAMENTO"}
+          if report["effect"] != "diagnostic_only_no_share_action_or_price_adjustment_promotion":
+              raise SystemExit("unexpected validation effect")
+          if not expected_labels.issubset(set(report["supported_labels_observed"])):
+              raise SystemExit("bounded sample did not expose all supported factor labels")
+          if not expected_labels.issubset(set(report["labels_with_price_evidence"])):
+              raise SystemExit("bounded sample lacks raw COTAHIST windows for supported labels")
+          if report["evaluated_event_count"] < 4:
+              raise SystemExit("too few corporate-action events were evaluated")
+          if report["raw_price_bar_count"] < 1:
+              raise SystemExit("no raw COTAHIST price evidence was loaded")
+          if report["adjusted_price_bar_count"] != 0:
+              raise SystemExit("factor audit must use raw, unadjusted COTAHIST")
+          if report["share_action_conversion_applied"]:
+              raise SystemExit("factor audit must not create ShareAction events")
+          if report["price_adjustment_applied"]:
+              raise SystemExit("factor audit must not adjust prices")
+          if report["factor_formula_promotion_applied"]:
+              raise SystemExit("factor audit must not promote a formula")
+          if report["strict_backtest_price_readiness_changed"]:
+              raise SystemExit("factor audit must not change readiness")
+          PY
+      - name: Publish validation evidence
+        if: always()
+        run: |
+          if [ -f b3-factor-cotahist-validation.json ]; then
+            cat b3-factor-cotahist-validation.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b3-factor-cotahist-validation-evidence
+          path: b3-factor-cotahist-validation.json
+          if-no-files-found: error
+          retention-days: 14
