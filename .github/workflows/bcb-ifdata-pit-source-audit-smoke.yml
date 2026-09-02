@@ -1,0 +1,100 @@
+name: bcb-ifdata-pit-source-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bcb-ifdata-pit-source-audit-smoke.yml"
+      - "scripts/bcb_ifdata_pit_source_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/bcb_ifdata_pit_source_audit.py"
+      - "src/ultimate_stock_analyzer/collectors/bcb_ifdata.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live BCB IFData PIT source audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/bcb_ifdata_pit_source_audit.py \
+            --periods 202412 202506 202512 \
+            --output bcb-ifdata-pit-source-audit.json
+      - name: Validate fail-closed revision boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("bcb-ifdata-pit-source-audit.json").read_text(encoding="utf-8")
+          )
+          if report["effect"] != "diagnostic_only_ifdata_pit_source_no_readiness_change":
+              raise SystemExit("unexpected IFData PIT source-audit effect")
+          if report["metadata_size_bytes"] <= 0 or len(report["metadata_sha256"]) != 64:
+              raise SystemExit("IFData OData metadata provenance is incomplete")
+          if len(report["observed_samples"]) != 6:
+              raise SystemExit("expected cadastro and report samples for three periods")
+          if any(item["row_count"] <= 0 for item in report["observed_samples"]):
+              raise SystemExit("IFData live sample returned no rows")
+          releases = {
+              item["ano_mes"]: item["contractual_initial_release_date"]
+              for item in report["initial_release_evidence"]
+          }
+          expected_releases = {
+              202412: "2025-03-31",
+              202506: "2025-08-29",
+              202512: "2026-03-31",
+          }
+          if releases != expected_releases:
+              raise SystemExit(f"unexpected IFData initial release schedule: {releases}")
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "IFDATA_HISTORICAL_VINTAGE_QUERY_UNAVAILABLE",
+              "IFDATA_REVISION_HISTORY_UNAVAILABLE",
+              "IFDATA_ROW_PUBLICATION_TIMESTAMP_UNAVAILABLE",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required IFData PIT blockers disappeared")
+          if not report["initial_publication_timing_proven"]:
+              raise SystemExit("official initial publication timing should be preserved")
+          if report["row_level_publication_timestamp_proven"]:
+              raise SystemExit("row-level publication timestamp was not proven")
+          if report["revision_history_proven"]:
+              raise SystemExit("revision history was not proven")
+          if report["historical_vintage_query_proven"]:
+              raise SystemExit("historical vintage replay was not proven")
+          if not report["current_observation_point_in_time_from_collection"]:
+              raise SystemExit("collection time should support forward snapshot lineage")
+          if report["historical_replay_ready"]:
+              raise SystemExit("IFData historical replay must remain blocked")
+          if report["bank_evidence_point_in_time_ready"]:
+              raise SystemExit("bank PIT evidence must remain blocked")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("diagnostic audit must not promote readiness")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f bcb-ifdata-pit-source-audit.json ]; then
+            cat bcb-ifdata-pit-source-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bcb-ifdata-pit-source-evidence
+          path: bcb-ifdata-pit-source-audit.json
+          if-no-files-found: error
+          retention-days: 14
