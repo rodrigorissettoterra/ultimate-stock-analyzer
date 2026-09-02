@@ -125,7 +125,71 @@ def test_statement_metadata_uses_official_filing_natural_key_without_id_doc() ->
     assert lines[0].available_from == datetime(2026, 3, 5, 17, 42, tzinfo=UTC)
 
 
-def test_statement_metadata_rejects_ambiguous_official_filing_key() -> None:
+def test_statement_metadata_suppresses_conflicting_publication_time() -> None:
+    statement = pd.DataFrame(
+        [
+            {
+                "CD_CVM": 12345,
+                "CNPJ_CIA": "00.000.000/0001-00",
+                "DENOM_CIA": "COMPANHIA TESTE S.A.",
+                "DT_REFER": "2025-12-31",
+                "VERSAO": 2,
+                "GRUPO_DFP": "DF Consolidado",
+                "ORDEM_EXERC": "ÚLTIMO",
+                "DT_INI_EXERC": "2025-01-01",
+                "DT_FIM_EXERC": "2025-12-31",
+                "CD_CONTA": "3.01",
+                "DS_CONTA": "Receita",
+                "VL_CONTA": 100,
+                "ESCALA_MOEDA": "UNIDADE",
+            }
+        ]
+    )
+    metadata = pd.DataFrame(
+        [
+            {
+                "CD_CVM": 12345,
+                "DT_REFER": "2025-12-31",
+                "VERSAO": 2,
+                "ID_DOC": 991,
+                "DT_RECEB": "2026-03-05",
+                "LINK_DOC": "https://example.invalid/991",
+            },
+            {
+                "CD_CVM": 12345,
+                "DT_REFER": "2025-12-31",
+                "VERSAO": 2,
+                "ID_DOC": 992,
+                "DT_RECEB": "2026-03-06",
+                "LINK_DOC": "https://example.invalid/992",
+            },
+        ]
+    )
+
+    with pytest.warns(RuntimeWarning, match="publication_time_conflicts=1"):
+        joined = attach_document_metadata(statement, metadata)
+
+    assert pd.isna(joined.loc[0, "ID_DOC"])
+    assert pd.isna(joined.loc[0, "DT_RECEB"])
+    assert pd.isna(joined.loc[0, "LINK_DOC"])
+
+    lines = normalize_statement(
+        joined,
+        document_type="DFP",
+        statement="DRE",
+        collected_at=datetime(2026, 8, 29, tzinfo=UTC),
+        source_document="dfp_cia_aberta_DRE_con_2025.csv",
+    )
+    assert lines[0].document_id is None
+    assert lines[0].received_at is None
+    assert lines[0].available_from is None
+    assert point_in_time_lines(
+        lines,
+        as_of=datetime(2026, 12, 31, tzinfo=UTC),
+    ) == []
+
+
+def test_statement_metadata_preserves_consensus_receipt_time() -> None:
     statement = pd.DataFrame(
         [{"CD_CVM": 12345, "DT_REFER": "2025-12-31", "VERSAO": 2}]
     )
@@ -137,14 +201,33 @@ def test_statement_metadata_rejects_ambiguous_official_filing_key() -> None:
                 "VERSAO": 2,
                 "ID_DOC": 991,
                 "DT_RECEB": "2026-03-05",
+                "LINK_DOC": "https://example.invalid/991",
             },
             {
                 "CD_CVM": 12345,
                 "DT_REFER": "2025-12-31",
                 "VERSAO": 2,
                 "ID_DOC": 992,
-                "DT_RECEB": "2026-03-06",
+                "DT_RECEB": "2026-03-05",
+                "LINK_DOC": "https://example.invalid/992",
             },
+        ]
+    )
+
+    with pytest.warns(RuntimeWarning, match="publication_time_conflicts=0"):
+        joined = attach_document_metadata(statement, metadata)
+
+    assert joined.loc[0, "DT_RECEB"] == "2026-03-05"
+    assert pd.isna(joined.loc[0, "ID_DOC"])
+    assert pd.isna(joined.loc[0, "LINK_DOC"])
+
+
+def test_statement_metadata_rejects_ambiguous_direct_document_id() -> None:
+    statement = pd.DataFrame([{"ID_DOC": 991}])
+    metadata = pd.DataFrame(
+        [
+            {"ID_DOC": 991, "DT_RECEB": "2026-03-05"},
+            {"ID_DOC": 991, "DT_RECEB": "2026-03-06"},
         ]
     )
 
@@ -166,8 +249,20 @@ def test_point_in_time_keeps_latest_revision_available_at_cutoff() -> None:
     }
     frame = pd.DataFrame(
         [
-            {**base, "VERSAO": 1, "ID_DOC": 10, "VL_CONTA": 100, "DT_RECEB": "2026-02-10"},
-            {**base, "VERSAO": 2, "ID_DOC": 11, "VL_CONTA": 110, "DT_RECEB": "2026-03-10"},
+            {
+                **base,
+                "VERSAO": 1,
+                "ID_DOC": 10,
+                "VL_CONTA": 100,
+                "DT_RECEB": "2026-02-10",
+            },
+            {
+                **base,
+                "VERSAO": 2,
+                "ID_DOC": 11,
+                "VL_CONTA": 110,
+                "DT_RECEB": "2026-03-10",
+            },
         ]
     )
     lines = normalize_statement(
