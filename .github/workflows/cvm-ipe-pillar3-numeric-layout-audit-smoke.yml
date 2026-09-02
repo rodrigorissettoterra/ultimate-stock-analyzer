@@ -1,0 +1,104 @@
+name: cvm-ipe-pillar3-numeric-layout-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-ipe-pillar3-numeric-layout-audit-smoke.yml"
+      - "scripts/cvm_ipe_pillar3_numeric_layout_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_numeric_layout.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_ipe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project audit dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[audit]"
+      - name: Run live Pillar 3 numeric-layout audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_ipe_pillar3_numeric_layout_audit.py \
+            --cvm-code 19348 \
+            --reference-date 2024-12-31 \
+            --reference-date 2025-12-31 \
+            --output cvm-ipe-pillar3-numeric-layout-audit.json
+      - name: Validate bounded layout evidence and fail-closed boundaries
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-ipe-pillar3-numeric-layout-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["effect"] != "diagnostic_only_pillar3_numeric_layout_no_readiness_change":
+              raise SystemExit("unexpected numeric-layout audit effect")
+          if report["company_id"] != "cvm:19348":
+              raise SystemExit("unexpected canonical Itaú CVM identity")
+          if report["observed_filing_count"] != 4:
+              raise SystemExit("expected four observed versioned Pillar 3 filings")
+          if report["periods_with_multiple_observed_filings"] != 2:
+              raise SystemExit("expected version 1/re-presentation for both periods")
+          if len(report["documents"]) != 4:
+              raise SystemExit("expected four PDF layout observations")
+          if not report["all_metric_contexts_observed"]:
+              raise SystemExit("not every prudential metric label has a bounded layout context")
+          if not report["all_metric_contexts_have_numeric_candidates"]:
+              raise SystemExit("a metric context has no numeric candidate tokens")
+          expected_keys = {
+              "core_equity_tier1_ratio",
+              "tier1_ratio",
+              "basel_ratio",
+              "leverage_ratio",
+          }
+          for document in report["documents"]:
+              evidence = {item["metric_key"]: item for item in document["metric_evidence"]}
+              if set(evidence) != expected_keys:
+                  raise SystemExit("unexpected metric layout coverage")
+              if document["missing_metric_keys"] or document["metrics_without_numeric_candidates"]:
+                  raise SystemExit("layout evidence is incomplete")
+              for item in evidence.values():
+                  if item["page_number"] <= 0 or not item["numeric_tokens"]:
+                      raise SystemExit("metric layout evidence lacks page or numeric tokens")
+                  if len(item["context"]) > 1800:
+                      raise SystemExit("bounded diagnostic context exceeded limit")
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+              "PILLAR3_NUMERIC_LAYOUT_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required fail-closed blockers disappeared")
+          if report["numeric_extraction_contract_ready"]:
+              raise SystemExit("layout inspection incorrectly promoted numeric extraction")
+          if report["bank_evidence_point_in_time_ready"] or report["readiness_promotion_allowed"]:
+              raise SystemExit("layout inspection incorrectly promoted bank readiness")
+          PY
+      - name: Publish numeric-layout evidence
+        if: always()
+        run: |
+          if [ -f cvm-ipe-pillar3-numeric-layout-audit.json ]; then
+            cat cvm-ipe-pillar3-numeric-layout-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-ipe-pillar3-numeric-layout-evidence
+          path: cvm-ipe-pillar3-numeric-layout-audit.json
+          if-no-files-found: error
+          retention-days: 14
