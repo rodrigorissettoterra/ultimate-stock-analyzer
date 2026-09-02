@@ -38,9 +38,20 @@ class B3DividendCollector:
             )
             response.raise_for_status()
             payload = response.json()
-        if not isinstance(payload, dict):
-            raise TypeError("unexpected B3 corporate-actions response")
-        return payload
+        return self.normalize_payload_shape(payload)
+
+    @staticmethod
+    def normalize_payload_shape(payload: Any) -> dict[str, Any]:
+        """Normalize the documented B3 company-supplement response without guessing.
+
+        The endpoint has been observed as both a root object and a single-item list containing
+        that object. Any other shape is rejected so a changed upstream contract fails closed.
+        """
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], dict):
+            return payload[0]
+        raise TypeError("unexpected B3 corporate-actions response")
 
     def fetch(self, issuing_company: str, *, collected_at: datetime) -> list[DividendPayment]:
         payload = self.fetch_payload(issuing_company)
