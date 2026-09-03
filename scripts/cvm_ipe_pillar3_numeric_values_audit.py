@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+from datetime import UTC, date, datetime
+from pathlib import Path
+
+import httpx
+from pypdf import PdfReader
+
+from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
+    CVMIPEArchiveSnapshot,
+    audit_cvm_ipe_pillar3_filing_ledger,
+)
+from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_numeric_values import (
+    BANK_EVIDENCE_NOT_POINT_IN_TIME,
+    PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
+    PILLAR3_NUMERIC_VALUE_EXTRACTION_UNPROVEN,
+    audit_pillar3_numeric_values,
+    extract_pillar3_prudential_observation,
+)
+from ultimate_stock_analyzer.collectors.cvm_ipe import CVMIPECollector, parse_cvm_ipe_zip
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Extract current-period prudential ratios from validated KM1 rows in versioned "
+            "official CVM RAD Pillar 3 PDFs."
+        )
+    )
+    parser.add_argument("--cvm-code", type=int, default=19348)
+    parser.add_argument("--reference-date", action="append", required=True)
+    parser.add_argument("--output", default="cvm-ipe-pillar3-numeric-values-audit.json")
+    return parser
+
+
+def main() -> None:
+    args = _parser().parse_args()
+    reference_dates = _reference_dates(args.reference_date)
+    generated_at = datetime.now(UTC)
+    source_years = tuple(
+        range(min(item.year for item in reference_dates) + 1, generated_at.year + 1)
+    )
+    if not source_years:
+        raise SystemExit("requested reference dates do not have observable delivery years")
+
+    collector = CVMIPECollector()
+    documents = []
+    snapshots = []
+    headers = {
+        "User-Agent": collector.user_agent,
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
+    }
+    with httpx.Client(
+        timeout=collector.timeout_seconds,
+        follow_redirects=True,
+        headers=headers,
+    ) as client:
+        for year in source_years:
+            url = collector.dataset_url(year)
+            response = client.get(url)
+            response.raise_for_status()
+            content = response.content
+            snapshots.append(
+                CVMIPEArchiveSnapshot(
+                    source_year=year,
+                    source_url=url,
+                    sha256=hashlib.sha256(content).hexdigest(),
+                    size_bytes=len(content),
+                )
+            )
+            documents.extend(
+                parse_cvm_ipe_zip(content, year=year, cvm_codes={args.cvm_code})
+            )
+
+        ledger = audit_cvm_ipe_pillar3_filing_ledger(
+            cvm_code=args.cvm_code,
+            documents=documents,
+            source_archives=snapshots,
+            requested_reference_dates=reference_dates,
+            generated_at=generated_at,
+        )
+        filing_rows = tuple(
+            filing for timeline in ledger.timelines for filing in timeline.filings
+        )
+        observations = []
+        failures = []
+        for filing in filing_rows:
+            document = filing.document
+            if (
+                document.download_url is None
+                or document.delivery_protocol is None
+                or document.version is None
+            ):
+                raise RuntimeError("Pillar 3 filing lacks URL, protocol or version")
+            response = client.get(document.download_url)
+            response.raise_for_status()
+            pdf_content = response.content
+            if not pdf_content.startswith(b"%PDF-"):
+                raise RuntimeError(
+                    f"RAD response is not a PDF for {document.delivery_protocol}"
+                )
+            reader = PdfReader(io.BytesIO(pdf_content), strict=False)
+            page_texts = tuple(page.extract_text() or "" for page in reader.pages)
+            try:
+                observations.append(
+                    extract_pillar3_prudential_observation(
+                        prudential_reference_date=filing.prudential_reference_date,
+                        available_from=document.available_from,
+                        delivery_protocol=document.delivery_protocol,
+                        version=document.version,
+                        source_url=document.download_url,
+                        pdf_sha256=hashlib.sha256(pdf_content).hexdigest(),
+                        page_texts=page_texts,
+                    )
+                )
+            except ValueError as error:
+                failures.append(f"{document.delivery_protocol}: {error}")
+
+    audit = audit_pillar3_numeric_values(
+        observations,
+        extraction_failures=failures,
+    )
+    report = audit.to_dict()
+    report["company_id"] = ledger.company_id
+    report["cvm_code"] = ledger.cvm_code
+    report["generated_at"] = generated_at.isoformat()
+    report["observed_filing_count"] = len(filing_rows)
+    report["extracted_observation_count"] = len(observations)
+    report["periods_with_multiple_observed_filings"] = (
+        ledger.periods_with_multiple_observed_filings
+    )
+    report["extraction_failures"] = failures
+    report["as_of_examples"] = _as_of_examples(audit)
+    report["warnings"] = [
+        "VALUES_ARE_VERSIONED_OBSERVED_FILING_EVIDENCE_ONLY",
+        "IPE_REVISION_HISTORY_COMPLETENESS_REMAINS_UNPROVEN",
+        "NO_BANK_READINESS_CHANGE_IN_THIS_BLOCK",
+    ]
+
+    required = {
+        BANK_EVIDENCE_NOT_POINT_IN_TIME,
+        PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
+    }
+    if not required.issubset(report["blockers"]):
+        raise RuntimeError("required fail-closed bank/revision blockers disappeared")
+    if report["extraction_failures"]:
+        raise RuntimeError("live Pillar 3 numeric extraction is incomplete")
+    if not report["numeric_extraction_contract_ready"]:
+        raise RuntimeError("numeric extraction contract did not validate")
+    if PILLAR3_NUMERIC_VALUE_EXTRACTION_UNPROVEN in report["blockers"]:
+        raise RuntimeError("numeric extraction blocker remained after successful validation")
+    if report["bank_evidence_point_in_time_ready"] or report["readiness_promotion_allowed"]:
+        raise RuntimeError("numeric extraction must not promote overall bank readiness")
+
+    Path(args.output).write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+
+
+def _as_of_examples(audit) -> list[dict[str, object]]:
+    examples = []
+    checks = (
+        (date(2024, 12, 31), datetime(2025, 3, 31, tzinfo=UTC)),
+        (date(2024, 12, 31), datetime(2025, 4, 1, tzinfo=UTC)),
+        (date(2025, 12, 31), datetime(2026, 3, 31, tzinfo=UTC)),
+        (date(2025, 12, 31), datetime(2026, 4, 1, tzinfo=UTC)),
+    )
+    for reference_date, as_of in checks:
+        observation = audit.value_as_of(reference_date=reference_date, as_of=as_of)
+        examples.append(
+            {
+                "reference_date": reference_date.isoformat(),
+                "as_of": as_of.isoformat(),
+                "selected": None if observation is None else observation.to_dict(),
+            }
+        )
+    return examples
+
+
+def _reference_dates(values: list[str]) -> tuple[date, ...]:
+    parsed = []
+    for value in values:
+        try:
+            reference_date = date.fromisoformat(value)
+        except ValueError as error:
+            raise SystemExit(f"invalid reference date {value!r}") from error
+        if reference_date.month != 12 or reference_date.day != 31:
+            raise SystemExit("reference dates must be annual 31 December dates")
+        parsed.append(reference_date)
+    if len(set(parsed)) != len(parsed):
+        raise SystemExit("reference dates must not contain duplicates")
+    return tuple(sorted(parsed))
+
+
+if __name__ == "__main__":
+    main()
