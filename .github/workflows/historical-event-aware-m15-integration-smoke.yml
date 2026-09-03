@@ -1,0 +1,107 @@
+name: historical-event-aware-m15-integration-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/historical-event-aware-m15-integration-smoke.yml"
+      - "scripts/historical_event_aware_m15_integration.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_event_dataset.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_event_aware_coverage.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_share_action_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/portfolio.py"
+      - "src/ultimate_stock_analyzer/backtesting/returns.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_dividends.py"
+      - "src/ultimate_stock_analyzer/market/prices.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live historical event dataset to M15 integration
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/historical_event_aware_m15_integration.py \
+            --sample MGLU:MGLU3 \
+            --sample ITSA:ITSA4 \
+            --sample B3SA:B3SA3 \
+            --sample AMER:AMER3 \
+            --start-year 2024 \
+            --end-year 2025 \
+            --output historical-event-aware-m15-integration.json
+      - name: Validate fail-closed M15 integration contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("historical-event-aware-m15-integration.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          dataset = report["dataset"]
+          if report["effect"] != (
+              "historical_event_dataset_to_m15_diagnostic_no_readiness_promotion"
+          ):
+              raise SystemExit("unexpected integration effect")
+          if dataset["share_action_count"] < 3:
+              raise SystemExit("too few validated ShareAction rows were materialized")
+          if dataset["raw_price_bar_count"] <= 0:
+              raise SystemExit("raw COTAHIST dataset is empty")
+          if len(dataset["raw_price_fingerprint_sha256"]) != 64:
+              raise SystemExit("raw COTAHIST fingerprint is missing")
+          if not dataset["raw_price_series_preserved"]:
+              raise SystemExit("raw COTAHIST preservation contract failed")
+          if dataset["price_adjustment_applied"]:
+              raise SystemExit("raw COTAHIST must not be overwritten")
+          if dataset["price_series_blocker_removed"]:
+              raise SystemExit("price-series blocker must not be removed")
+          required = "B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN"
+          if required not in dataset["strict_blockers"]:
+              raise SystemExit("historical source-completeness blocker disappeared")
+          if dataset["historical_source_completeness_proven"]:
+              raise SystemExit("latest-state supplement cannot prove historical completeness")
+          if dataset["strict_event_aware_backtest_ready"]:
+              raise SystemExit("strict M15 must remain blocked")
+          if dataset["readiness_promotion_allowed"]:
+              raise SystemExit("readiness promotion must remain disabled")
+          comparison = report["diagnostic_m15_comparison"]
+          if comparison is None:
+              raise SystemExit("diagnostic M15 comparison was not produced")
+          if not comparison["diagnostic_only"]:
+              raise SystemExit("M15 comparison must remain diagnostic")
+          if comparison["readiness_promotion_allowed"]:
+              raise SystemExit("diagnostic comparison cannot promote readiness")
+          if comparison["raw_asset_return"] == comparison["event_aware_asset_return"]:
+              raise SystemExit("ShareAction was not consumed by the M15 return path")
+          if "DIAGNOSTIC_EVENT_AWARE_BACKTEST" not in comparison["event_aware_warnings"]:
+              raise SystemExit("diagnostic M15 warning is missing")
+          PY
+      - name: Publish integration evidence
+        if: always()
+        run: |
+          if [ -f historical-event-aware-m15-integration.json ]; then
+            cat historical-event-aware-m15-integration.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: historical-event-aware-m15-integration-evidence
+          path: historical-event-aware-m15-integration.json
+          if-no-files-found: error
+          retention-days: 14

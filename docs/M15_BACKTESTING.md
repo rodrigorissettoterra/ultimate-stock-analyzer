@@ -22,6 +22,13 @@ explicitly and chronologically. Subscription rights are not silently approximate
 requiring those events must provide a correctly adjusted series or be rejected/flagged by data
 preparation.
 
+Post-M20 historical preparation now has a dedicated event-aware dataset adapter. It preserves raw
+B3 COTAHIST, materializes empirically validated `ShareAction` and supported `CashDistribution`
+objects as separate M15 inputs, fingerprints the source bars, and is strict by default. Because the
+latest-state B3 supplement still does not prove historical event completeness, diagnostic execution
+requires an explicit non-strict opt-in and cannot promote readiness or M16 weights. See
+`POST_M20_HISTORICAL_EVENT_DATASET_M15_INTEGRATION.md`.
+
 ## Portfolio model
 
 The first reference policy is an equal-weight top-N portfolio ranked by Investment Attractiveness.
