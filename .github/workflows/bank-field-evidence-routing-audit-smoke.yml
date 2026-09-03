@@ -1,0 +1,102 @@
+name: bank-field-evidence-routing-audit-smoke
+
+on:
+  pull_request:
+    paths:
+      - "src/ultimate_stock_analyzer/backtesting/bank_field_evidence_routing.py"
+      - "tests/test_bank_field_evidence_routing.py"
+      - "scripts/bank_field_evidence_routing_audit.py"
+      - "docs/POST_M20_BANK_FIELD_EVIDENCE_ROUTING.md"
+      - ".github/workflows/bank-field-evidence-routing-audit-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live bank field evidence routing audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/bank_field_evidence_routing_audit.py \
+            --cvm-code 19348 \
+            --cnpj 60.872.504/0001-23 \
+            --year 2024 \
+            --year 2025 \
+            --output bank-field-evidence-routing-audit.json
+      - name: Validate fail-closed field routing
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("bank-field-evidence-routing-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["years"] != [2024, 2025]:
+              raise SystemExit("unexpected bank field routing years")
+          if len(report["reports"]) != 2:
+              raise SystemExit("expected one routing report per year")
+          if len(report["dfp_archives"]) != 2:
+              raise SystemExit("expected one official DFP archive per year")
+          if not report["ifdata_payloads"]:
+              raise SystemExit("IFData provenance payloads are missing")
+          for archive in report["dfp_archives"]:
+              if archive["size_bytes"] <= 0 or len(archive["sha256"]) != 64:
+                  raise SystemExit("DFP archive provenance is incomplete")
+          for payload in report["ifdata_payloads"]:
+              if payload["size_bytes"] <= 0 or len(payload["sha256"]) != 64:
+                  raise SystemExit("IFData payload provenance is incomplete")
+
+          for year_report in report["reports"]:
+              if year_report["readiness_promotion_allowed"]:
+                  raise SystemExit("field routing must not promote readiness")
+              if year_report["bank_evidence_point_in_time_ready"]:
+                  raise SystemExit("bank PIT readiness must remain blocked")
+              if year_report["strict_point_in_time_critical_coverage"] != 0.0:
+                  raise SystemExit("live historical bank evidence must remain non-PIT")
+              decisions = {
+                  item["field_name"]: item for item in year_report["decisions"]
+              }
+              annual = decisions["annual_net_income"]
+              if annual["status"] == "POINT_IN_TIME_ADMISSIBLE":
+                  raise SystemExit("annual net income was incorrectly promoted to PIT")
+              cvm_sources = [annual["source"]] + [
+                  item["source"] for item in annual["alternatives"]
+              ]
+              if "CVM_DFP" not in cvm_sources:
+                  raise SystemExit("official CVM 3.09 evidence was not routed")
+              if annual["source"] == "CVM_DFP":
+                  if annual["status"] != "OFFICIAL_SCOPE_MISMATCH":
+                      raise SystemExit("CVM 3.09 must remain a scope mismatch")
+                  if annual["contract_admissible"]:
+                      raise SystemExit("CVM 3.09 must not enter prudential contract")
+              if "BANK_EVIDENCE_NOT_POINT_IN_TIME" not in year_report["blockers"]:
+                  raise SystemExit("bank fail-closed blocker was removed")
+          PY
+      - name: Publish routing evidence
+        if: always()
+        run: |
+          if [ -f bank-field-evidence-routing-audit.json ]; then
+            cat bank-field-evidence-routing-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bank-field-evidence-routing-evidence
+          path: bank-field-evidence-routing-audit.json
+          if-no-files-found: error
+          retention-days: 14
