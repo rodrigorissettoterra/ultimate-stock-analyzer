@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
@@ -23,6 +21,7 @@ from ultimate_stock_analyzer.backtesting.models import (
     UniverseMembership,
 )
 from ultimate_stock_analyzer.backtesting.portfolio import run_rebalance_backtest
+from ultimate_stock_analyzer.backtesting.raw_price_provenance import raw_price_fingerprint
 from ultimate_stock_analyzer.market.prices import PriceBar
 
 CORPORATE_ACTION_DATASET_OBSERVED_COVERAGE_INCOMPLETE = (
@@ -253,7 +252,7 @@ def materialize_historical_event_dataset(
         share_actions=share_actions,
         distributions=distributions,
         raw_price_bar_count=len(target_bars),
-        raw_price_fingerprint_sha256=_raw_price_fingerprint(target_bars),
+        raw_price_fingerprint_sha256=raw_price_fingerprint(target_bars),
         observed_blockers=tuple(sorted(observed_blockers)),
         strict_blockers=tuple(sorted(strict_blockers)),
         observed_event_path_ready=observed_ready,
@@ -358,30 +357,3 @@ def _cvm_ipe_corroboration_status(
         or item.observed_event_document_corroboration_complete
         for item in audits
     )
-
-
-def _raw_price_fingerprint(bars: tuple[PriceBar, ...]) -> str:
-    digest = hashlib.sha256()
-    for bar in bars:
-        payload = {
-            "ticker": bar.ticker.upper(),
-            "trade_date": bar.trade_date.isoformat(),
-            "open": bar.open,
-            "high": bar.high,
-            "low": bar.low,
-            "close": bar.close,
-            "volume": bar.volume,
-            "trades": bar.trades,
-            "quantity": bar.quantity,
-            "market_code": bar.market_code,
-            "isin": bar.isin,
-            "adjusted_close": bar.adjusted_close,
-            "source": bar.source,
-        }
-        digest.update(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
-                "utf-8"
-            )
-        )
-        digest.update(b"\n")
-    return digest.hexdigest()
