@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,6 +13,12 @@ from ultimate_stock_analyzer.backtesting.readiness import (
     SECTOR_ROUTING_NOT_POINT_IN_TIME,
     SPECIALIZED_EVIDENCE_NOT_POINT_IN_TIME,
     audit_historical_backtest_readiness,
+)
+from ultimate_stock_analyzer.backtesting.readiness_corporate_actions import (
+    CORPORATE_ACTION_EVIDENCE_UNIVERSE_INCOMPLETE,
+    PRICE_TREATMENT_EVENT_AWARE_M15_DIAGNOSTIC_ONLY,
+    corporate_action_readiness_evidence_from_integration_report,
+    integrate_corporate_action_readiness,
 )
 from ultimate_stock_analyzer.bootstrap.coverage import FundamentalCoverageProfiler
 from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
@@ -42,6 +50,13 @@ def main() -> None:
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--registry", default=DEFAULT_REGISTRY)
     parser.add_argument(
+        "--event-aware-integration-report",
+        help=(
+            "Optional bounded historical-event/M15 integration JSON. It can prove "
+            "the return path but never expands its own ticker/date scope."
+        ),
+    )
+    parser.add_argument(
         "--output",
         default="historical-backtest-readiness.json",
     )
@@ -51,6 +66,18 @@ def main() -> None:
     tickers = tuple(args.ticker)
     if not tickers:
         raise ValueError("readiness audit requires at least one bounded ticker")
+
+    corporate_action_evidence = None
+    if args.event_aware_integration_report:
+        evidence_path = Path(args.event_aware_integration_report)
+        evidence_bytes = evidence_path.read_bytes()
+        evidence_payload = json.loads(evidence_bytes)
+        if not isinstance(evidence_payload, dict):
+            raise ValueError("event-aware integration report must contain one JSON object")
+        corporate_action_evidence = corporate_action_readiness_evidence_from_integration_report(
+            evidence_payload,
+            integration_report_sha256=hashlib.sha256(evidence_bytes).hexdigest(),
+        )
 
     plan = PublicDataBootstrapPlan(
         start_year=args.start_year,
@@ -71,11 +98,15 @@ def main() -> None:
         sector_registry=registry,
     ).analyze(generated_at=collected_at)
 
-    report = audit_historical_backtest_readiness(
+    base_report = audit_historical_backtest_readiness(
         dataset,
         coverage,
         generated_at=collected_at,
         coverage_records=records,
+    )
+    report = integrate_corporate_action_readiness(
+        base_report,
+        corporate_action_evidence,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -127,6 +158,23 @@ def main() -> None:
                 "bounded bank sample has a fundamental PIT gap without specialized "
                 "evidence attribution"
             )
+
+    if corporate_action_evidence is not None:
+        if not report.corporate_action_evidence_attached:
+            raise RuntimeError("corporate-action integration evidence was not attached")
+        if not report.corporate_action_m15_event_aware_path_validated:
+            raise RuntimeError("bounded integration evidence did not validate the M15 event path")
+        if report.corporate_action_strict_event_aware_backtest_ready:
+            raise RuntimeError("diagnostic corporate-action evidence unexpectedly became strict")
+        if report.price_treatment_mode != PRICE_TREATMENT_EVENT_AWARE_M15_DIAGNOSTIC_ONLY:
+            raise RuntimeError(
+                "unadjusted price treatment did not expose diagnostic event-aware mode"
+            )
+        if (
+            not report.corporate_action_evidence_matches_requested_universe
+            and CORPORATE_ACTION_EVIDENCE_UNIVERSE_INCOMPLETE not in report.blockers
+        ):
+            raise RuntimeError("corporate-action evidence scope mismatch was not fail-closed")
 
 
 if __name__ == "__main__":
