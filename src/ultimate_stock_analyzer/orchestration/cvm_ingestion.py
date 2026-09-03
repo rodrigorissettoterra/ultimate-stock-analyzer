@@ -154,6 +154,61 @@ class CVMIngestionService:
             )
         return output
 
+    def load_company_statements_from_archive(
+        self,
+        archive: bytes,
+        *,
+        cvm_code: int,
+        document_type: str,
+        statements: tuple[str, ...],
+        scope_token: str,
+        collected_at: datetime,
+    ) -> list[FinancialStatementLine]:
+        """Load one issuer's statements with strict filing-lineage semantics.
+
+        Exact-issuer contract audits must not inherit metadata ambiguity from
+        unrelated issuers, nor may they collapse multiple official documents
+        that share a CVM natural key. Both statement and metadata frames are
+        scoped to ``cvm_code`` before attachment, and the natural-key fallback
+        is strict so relevant ambiguity raises instead of being suppressed.
+        """
+        document = document_type.upper()
+        metadata = self._read_metadata(archive, f"{document.lower()}_cia_aberta")
+        metadata = _filter_cvm_code(metadata, cvm_code=cvm_code)
+        output: list[FinancialStatementLine] = []
+        for statement in statements:
+            statement_file = self.collector.find_csv(
+                archive,
+                statement.lower(),
+                scope_token.lower(),
+            )
+            statement_frame = self.collector.read_csv(archive, statement_file)
+            if "CD_CVM" not in statement_frame.columns:
+                raise ValueError(
+                    f"CVM statement member {statement_file!r} has no CD_CVM column"
+                )
+            statement_frame = _filter_cvm_code(
+                statement_frame,
+                cvm_code=cvm_code,
+            )
+            if statement_frame.empty:
+                continue
+            statement_frame = attach_document_metadata(
+                statement_frame,
+                metadata,
+                strict_natural_key=True,
+            )
+            output.extend(
+                normalize_statement(
+                    statement_frame,
+                    document_type=document,
+                    statement=statement,
+                    collected_at=collected_at,
+                    source_document=statement_file,
+                )
+            )
+        return output
+
     def _cache_issuer_identity(self, issuers: list[IssuerRecord]) -> None:
         for issuer in issuers:
             key = _cnpj_key(issuer.cnpj)
@@ -214,6 +269,15 @@ class CVMIngestionService:
             if {"ID_DOC", "DT_RECEB"}.issubset(frame.columns):
                 return frame
         return pd.DataFrame()
+
+
+def _filter_cvm_code(frame: pd.DataFrame, *, cvm_code: int) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    if "CD_CVM" not in frame.columns:
+        return frame.copy()
+    normalized = pd.to_numeric(frame["CD_CVM"], errors="coerce")
+    return frame.loc[normalized.eq(cvm_code)].copy()
 
 
 def _first_column(frame: pd.DataFrame, *names: str) -> str | None:
