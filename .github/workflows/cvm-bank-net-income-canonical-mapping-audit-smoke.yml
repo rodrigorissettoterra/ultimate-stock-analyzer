@@ -1,0 +1,111 @@
+name: cvm-bank-net-income-canonical-mapping-audit-smoke
+
+on:
+  pull_request:
+    paths:
+      - "src/ultimate_stock_analyzer/backtesting/cvm_bank_net_income_canonical_mapping_audit.py"
+      - "tests/test_cvm_bank_net_income_canonical_mapping_audit.py"
+      - "scripts/cvm_bank_net_income_canonical_mapping_audit.py"
+      - "docs/POST_M20_CVM_BANK_NET_INCOME_CANONICAL_MAPPING_AUDIT.md"
+      - ".github/workflows/cvm-bank-net-income-canonical-mapping-audit-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live CVM bank net-income canonical mapping audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_bank_net_income_canonical_mapping_audit.py \
+            --cvm-code 19348 \
+            --year 2020 \
+            --year 2021 \
+            --year 2022 \
+            --year 2023 \
+            --year 2024 \
+            --year 2025 \
+            --output cvm-bank-net-income-canonical-mapping-audit.json
+      - name: Validate observed 3.09 mapping evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-bank-net-income-canonical-mapping-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          expected_years = list(range(2020, 2026))
+          if report["requested_years"] != expected_years:
+              raise SystemExit("unexpected requested mapping window")
+          if report["observed_years"] != expected_years:
+              raise SystemExit("CVM bank mapping window is incomplete")
+          if len(report["dfp_archives"]) != len(expected_years):
+              raise SystemExit("expected one official DFP archive per fiscal year")
+          for archive in report["dfp_archives"]:
+              if archive["size_bytes"] <= 0 or len(archive["sha256"]) != 64:
+                  raise SystemExit("DFP archive provenance is incomplete")
+          for year in expected_years:
+              if not report["versions_observed_by_year"][str(year)]:
+                  raise SystemExit(f"no DFP filing version observed for {year}")
+          if not report["versions"]:
+              raise SystemExit("no CVM DRE versions were audited")
+          for version in report["versions"]:
+              if version["account_309"] is None:
+                  raise SystemExit("account 3.09 is missing from an observed version")
+              if not version["account_309_label_validated"]:
+                  raise SystemExit("account 3.09 label drifted")
+              if not version["continuity_identity_validated"]:
+                  raise SystemExit("3.09 != 3.07 + 3.08 for an observed version")
+              if not version["availability_timestamp_validated"]:
+                  raise SystemExit("3.09 filing availability timestamp is missing")
+              if not version["observed_mapping_validated"]:
+                  raise SystemExit("an observed version did not validate mapping 3.09")
+              if version["blockers"]:
+                  raise SystemExit(f"version blockers remain: {version['blockers']}")
+          if not report["canonical_mapping_supported_for_observed_scope"]:
+              raise SystemExit("3.09 canonical mapping was not validated for scope")
+          if report["canonical_account_code"] != "3.09":
+              raise SystemExit("unexpected canonical bank net-income account")
+          required_blockers = {
+              "CVM_BANK_DFP_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+              "CVM_BANK_DFP_PRUDENTIAL_SCOPE_ALIGNMENT_UNPROVEN",
+          }
+          if set(report["blockers"]) != required_blockers:
+              raise SystemExit(f"unexpected global blockers: {report['blockers']}")
+          if report["revision_history_completeness_proven"]:
+              raise SystemExit("revision-history completeness was not proven")
+          if report["prudential_scope_alignment_proven"]:
+              raise SystemExit("prudential scope alignment was not proven")
+          if report["bank_evidence_point_in_time_ready"]:
+              raise SystemExit("overall bank PIT evidence must remain blocked")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("mapping audit must not promote overall readiness")
+          PY
+      - name: Publish mapping evidence
+        if: always()
+        run: |
+          if [ -f cvm-bank-net-income-canonical-mapping-audit.json ]; then
+            cat cvm-bank-net-income-canonical-mapping-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-bank-net-income-canonical-mapping-evidence
+          path: cvm-bank-net-income-canonical-mapping-audit.json
+          if-no-files-found: error
+          retention-days: 14
