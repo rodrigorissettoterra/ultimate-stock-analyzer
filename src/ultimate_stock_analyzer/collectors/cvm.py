@@ -19,8 +19,8 @@ class CVMCollector:
 
     def dataset_url(self, document: str, year: int) -> str:
         doc = document.upper()
-        if doc not in {"DFP", "ITR", "FCA"}:
-            raise ValueError("document must be DFP, ITR or FCA")
+        if doc not in {"DFP", "ITR", "FCA", "FRE"}:
+            raise ValueError("document must be DFP, ITR, FCA or FRE")
         return f"{CVM_DOCUMENT_BASE}/{doc}/DADOS/{doc.lower()}_cia_aberta_{year}.zip"
 
     def registry_url(self) -> str:
