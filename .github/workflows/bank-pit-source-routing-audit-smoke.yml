@@ -1,0 +1,118 @@
+name: bank-pit-source-routing-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bank-pit-source-routing-audit-smoke.yml"
+      - "scripts/bank_pit_source_routing_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/bank_pit_source_routing.py"
+      - "src/ultimate_stock_analyzer/fundamentals/contracts.py"
+      - "src/ultimate_stock_analyzer/fundamentals/cvm_accounts.py"
+      - "src/ultimate_stock_analyzer/normalization/cvm.py"
+      - "config/scoring/sectors/banks_v0.6.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live bank PIT source-routing audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/bank_pit_source_routing_audit.py \
+            --cvm-code 19348 \
+            --year 2024 \
+            --year 2025 \
+            --output bank-pit-source-routing-audit.json
+      - name: Validate fail-closed hybrid routing evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("bank-pit-source-routing-audit.json").read_text(encoding="utf-8")
+          )
+          if report["effect"] != "bank_hybrid_pit_source_routes_mapped_no_readiness_promotion":
+              raise SystemExit("unexpected bank PIT routing effect")
+          if report["company_id"] != "cvm:19348":
+              raise SystemExit("unexpected canonical bank issuer identity")
+          if len(report["dfp_archives"]) != 2:
+              raise SystemExit("expected two official DFP archive snapshots")
+          if len(report["cvm_accounting_periods"]) != 2:
+              raise SystemExit("expected two timestamped CVM accounting periods")
+          if report["proven_pit_critical_coverage"] != 0.2:
+              raise SystemExit("unexpected proven bank critical PIT coverage")
+          if report["timestamped_candidate_or_better_critical_coverage"] != 0.7:
+              raise SystemExit("unexpected timestamped candidate coverage")
+          if abs(report["proven_pit_model_weight"] - 0.16) > 1e-12:
+              raise SystemExit("unexpected proven PIT bank model weight")
+          if abs(report["timestamped_candidate_or_better_model_weight"] - 0.405) > 1e-12:
+              raise SystemExit("unexpected candidate-or-better bank model weight")
+
+          for archive in report["dfp_archives"]:
+              if len(archive["sha256"]) != 64 or archive["size_bytes"] <= 0:
+                  raise SystemExit("invalid official DFP archive evidence")
+          for period in report["cvm_accounting_periods"]:
+              if period["total_assets"] <= 0 or period["equity"] <= 0:
+                  raise SystemExit("invalid CVM bank balance-sheet candidate")
+              if period["net_income_consolidated"] == 0:
+                  raise SystemExit("unexpected zero CVM consolidated net income")
+              if not period["total_assets_available_from"]:
+                  raise SystemExit("untimed CVM total-assets candidate")
+              if not period["equity_available_from"]:
+                  raise SystemExit("untimed CVM equity candidate")
+              if not period["net_income_available_from"]:
+                  raise SystemExit("untimed CVM net-income candidate")
+
+          critical = {item["input_name"]: item for item in report["critical_routes"]}
+          if critical["basel_ratio"]["status"] != "validated_observed_pit":
+              raise SystemExit("Basel route regressed")
+          if critical["tier1_ratio"]["status"] != "validated_observed_pit":
+              raise SystemExit("Tier 1 route regressed")
+          if critical["total_assets"]["status"] != "timestamped_candidate_unaligned":
+              raise SystemExit("CVM accounting candidate was incorrectly promoted")
+          if critical["gross_credit_portfolio"]["status"] != "latest_state_non_pit":
+              raise SystemExit("gross-credit blocker disappeared")
+
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "BANK_SCOPE_ALIGNMENT_UNPROVEN",
+              "BANK_GROSS_CREDIT_PIT_SOURCE_UNRESOLVED",
+              "BANK_CREDIT_LOSS_PIT_SOURCE_UNRESOLVED",
+              "BANK_MODEL_PIT_COVERAGE_INCOMPLETE",
+              "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required fail-closed bank blockers disappeared")
+          if report["bank_evidence_point_in_time_ready"]:
+              raise SystemExit("hybrid routing audit incorrectly promoted bank readiness")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("hybrid routing audit incorrectly allowed readiness promotion")
+          PY
+      - name: Publish source-routing evidence
+        if: always()
+        run: |
+          if [ -f bank-pit-source-routing-audit.json ]; then
+            cat bank-pit-source-routing-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bank-pit-source-routing-evidence
+          path: bank-pit-source-routing-audit.json
+          if-no-files-found: error
+          retention-days: 14
