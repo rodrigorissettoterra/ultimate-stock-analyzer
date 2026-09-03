@@ -1,0 +1,91 @@
+name: cvm-fca-historical-applicability-source-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-fca-historical-applicability-source-audit-smoke.yml"
+      - "scripts/cvm_fca_historical_applicability_source_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_fca_applicability_source_audit.py"
+      - "tests/test_cvm_fca_applicability_source_audit.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live FCA historical applicability source audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_fca_historical_applicability_source_audit.py \
+            --year 2024 \
+            --year 2025 \
+            --cvm-code 9512 \
+            --cvm-code 4170 \
+            --cvm-code 19348 \
+            --output cvm-fca-historical-applicability-source-audit.json
+      - name: Validate fail-closed source-audit contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-fca-historical-applicability-source-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["effect"] != (
+              "fca_historical_applicability_source_audit_no_routing_change"
+          ):
+              raise SystemExit("unexpected FCA audit effect")
+          if len(report["reports"]) != 2:
+              raise SystemExit("expected one FCA audit report per delivery year")
+          for item in report["reports"]:
+              if item["archive_size_bytes"] <= 0:
+                  raise SystemExit("FCA archive is empty")
+              if item["csv_member_count"] <= 0:
+                  raise SystemExit("FCA archive exposes no CSV members")
+              if len(item["archive_sha256"]) != 64:
+                  raise SystemExit("FCA archive fingerprint is missing")
+              if not item["member_schemas"]:
+                  raise SystemExit("FCA member schema inventory is empty")
+              if item["sector_routing_point_in_time_ready"]:
+                  raise SystemExit("FCA discovery audit cannot promote Sector PIT")
+              if item["readiness_promotion_allowed"]:
+                  raise SystemExit("FCA discovery audit cannot promote readiness")
+          summary = report["summary"]
+          if summary["deterministic_model_routing_supported"]:
+              raise SystemExit("deterministic FCA model routing is not proven yet")
+          if summary["sector_routing_point_in_time_ready"]:
+              raise SystemExit("Sector PIT must remain blocked in this audit")
+          if summary["readiness_promotion_allowed"]:
+              raise SystemExit("readiness promotion must remain disabled")
+          if "HISTORICAL_MODEL_APPLICABILITY_UNPROVEN" not in summary["blockers"]:
+              raise SystemExit("historical applicability blocker disappeared")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f cvm-fca-historical-applicability-source-audit.json ]; then
+            cat cvm-fca-historical-applicability-source-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-fca-historical-applicability-source-evidence
+          path: cvm-fca-historical-applicability-source-audit.json
+          if-no-files-found: error
+          retention-days: 14
