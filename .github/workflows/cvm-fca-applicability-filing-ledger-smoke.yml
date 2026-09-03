@@ -1,0 +1,105 @@
+name: cvm-fca-applicability-filing-ledger-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-fca-applicability-filing-ledger-smoke.yml"
+      - "scripts/cvm_fca_applicability_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_fca_applicability_filing_ledger.py"
+      - "tests/test_cvm_fca_applicability_filing_ledger.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live FCA applicability filing ledger
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_fca_applicability_filing_ledger.py \
+            --year 2024 \
+            --year 2025 \
+            --cvm-code 9512 \
+            --cvm-code 4170 \
+            --cvm-code 19348 \
+            --output cvm-fca-applicability-filing-ledger.json
+      - name: Validate exact filing-lineage contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-fca-applicability-filing-ledger.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if len(report["ledgers"]) != 2:
+              raise SystemExit("expected two FCA annual ledgers")
+          expected_codes = {4170, 9512, 19348}
+          expected_sectors = {"Petróleo e Gás", "Extração Mineral", "Bancos"}
+          for ledger in report["ledgers"]:
+              if ledger["blockers"]:
+                  raise SystemExit(f"FCA filing ledger blockers: {ledger['blockers']}")
+              if set(ledger["requested_cvm_codes"]) != expected_codes:
+                  raise SystemExit("unexpected bounded FCA request universe")
+              if set(ledger["applicability_detail_codes_observed"]) != expected_codes:
+                  raise SystemExit("bounded FCA issuer detail coverage disappeared")
+              if ledger["missing_applicability_detail_codes"]:
+                  raise SystemExit("requested FCA issuer detail evidence is missing")
+              if ledger["applicability_detail_count"] < len(expected_codes):
+                  raise SystemExit("bounded FCA applicability detail coverage disappeared")
+              if len(ledger["filings"]) != ledger["applicability_detail_count"]:
+                  raise SystemExit("not every bounded detail row was exactly materialized")
+              sectors = {item["sector_activity"] for item in ledger["filings"]}
+              if sectors != expected_sectors:
+                  raise SystemExit(f"unexpected bounded FCA sectors: {sorted(sectors)}")
+              for filing in ledger["filings"]:
+                  if not filing["exact_document_join"]:
+                      raise SystemExit("non-exact FCA filing join escaped")
+                  if not filing["issuer_identity_match"]:
+                      raise SystemExit("cross-issuer FCA filing join escaped")
+                  if not filing["reference_date_match"]:
+                      raise SystemExit("cross-period FCA filing join escaped")
+                  if not filing["point_in_time_eligible_from_available_from"]:
+                      raise SystemExit("materialized filing lost temporal eligibility")
+                  if len(filing["evidence_sha256"]) != 64:
+                      raise SystemExit("FCA filing evidence fingerprint is missing")
+                  if filing["available_from"][:10] <= filing["received_date"]:
+                      raise SystemExit("FCA available_from is not conservative next-day timing")
+          summary = report["summary"]
+          if not summary["all_requested_issuers_have_detail"]:
+              raise SystemExit("requested issuer completeness summary is false")
+          if not summary["all_detail_rows_exactly_materialized"]:
+              raise SystemExit("FCA detail materialization summary is false")
+          if not summary["all_ledgers_blocker_free"]:
+              raise SystemExit("FCA filing ledger summary contains blockers")
+          if summary["readiness_promotion_allowed"]:
+              raise SystemExit("filing ledger cannot promote readiness")
+          PY
+      - name: Publish filing ledger evidence
+        if: always()
+        run: |
+          if [ -f cvm-fca-applicability-filing-ledger.json ]; then
+            cat cvm-fca-applicability-filing-ledger.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-fca-applicability-filing-ledger-evidence
+          path: cvm-fca-applicability-filing-ledger.json
+          if-no-files-found: error
+          retention-days: 14
