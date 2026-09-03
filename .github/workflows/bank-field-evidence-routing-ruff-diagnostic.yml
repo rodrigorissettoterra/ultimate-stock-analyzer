@@ -1,0 +1,43 @@
+name: bank-field-evidence-routing-ruff-diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "tests/test_bank_field_evidence_routing.py"
+      - ".github/workflows/bank-field-evidence-routing-ruff-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Let Ruff apply its canonical fixes
+        run: |
+          ruff --version
+          ruff check tests/test_bank_field_evidence_routing.py --fix --show-fixes
+      - name: Show canonical Ruff diff
+        run: |
+          git diff -- tests/test_bank_field_evidence_routing.py
+          sed -n '1,40p' tests/test_bank_field_evidence_routing.py
+      - name: Verify full lint after fix
+        run: ruff check src tests
+      - name: Run focused tests
+        run: pytest -q tests/test_bank_field_evidence_routing.py
+      - name: Upload Ruff-fixed test
+        uses: actions/upload-artifact@v4
+        with:
+          name: bank-field-evidence-routing-ruff-fixed-test
+          path: tests/test_bank_field_evidence_routing.py
+          if-no-files-found: error
+          retention-days: 3
