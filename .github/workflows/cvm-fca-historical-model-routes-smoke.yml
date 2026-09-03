@@ -1,0 +1,104 @@
+name: cvm-fca-historical-model-routes-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-fca-historical-model-routes-smoke.yml"
+      - "config/backtesting/fca_model_routes_v0.2.yml"
+      - "config/scoring/sector_registry_v0.6.yml"
+      - "scripts/cvm_fca_historical_model_routes.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_fca_applicability_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_fca_historical_model_routes.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_model_routes.py"
+      - "src/ultimate_stock_analyzer/scoring/sector_models.py"
+      - "tests/test_cvm_fca_historical_model_routes.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live FCA historical model-route materialization
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_fca_historical_model_routes.py \
+            --year 2024 \
+            --year 2025 \
+            --cvm-code 9512 \
+            --cvm-code 4170 \
+            --cvm-code 19348 \
+            --mapping config/backtesting/fca_model_routes_v0.2.yml \
+            --sector-registry config/scoring/sector_registry_v0.6.yml \
+            --output cvm-fca-historical-model-routes.json
+      - name: Validate exact historical routes
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-fca-historical-model-routes.json").read_text(encoding="utf-8")
+          )
+          expected = {
+              ("cvm:4170", 2024): ("commodities", "2024-12-03T00:00:00Z"),
+              ("cvm:9512", 2024): ("commodities", "2024-07-26T00:00:00Z"),
+              ("cvm:19348", 2024): ("banks", "2024-08-17T00:00:00Z"),
+              ("cvm:4170", 2025): ("commodities", "2025-04-12T00:00:00Z"),
+              ("cvm:9512", 2025): ("commodities", "2025-05-16T00:00:00Z"),
+              ("cvm:19348", 2025): ("banks", "2025-03-12T00:00:00Z"),
+          }
+          if report["blockers"]:
+              raise SystemExit(f"historical route blockers: {report['blockers']}")
+          if report["blocked_company_years"]:
+              raise SystemExit("bounded historical routes unexpectedly abstained")
+          if report["unsupported_sector_values"]:
+              raise SystemExit("bounded FCA sector mapping lost coverage")
+          if report["registry_mismatch_values"]:
+              raise SystemExit(
+                  f"bounded FCA registry probes diverged: {report['registry_mismatch_values']}"
+              )
+          if report["route_count"] != len(expected):
+              raise SystemExit(f"unexpected route count: {report['route_count']}")
+          observed = {}
+          for route in report["routes"]:
+              key = (route["company_id"], route["fiscal_year"])
+              observed[key] = (route["model_id"], route["available_from"])
+              if not route["point_in_time_eligible"]:
+                  raise SystemExit(f"route lost PIT eligibility: {key}")
+              if route["evidence_source"] != "CVM_FCA":
+                  raise SystemExit(f"unexpected route source: {key}")
+              if len(route["evidence_sha256"]) != 64:
+                  raise SystemExit(f"route evidence hash is missing: {key}")
+              if "fca-sector-activity-v0.2" not in route["mapping_rule_version"]:
+                  raise SystemExit(f"unexpected mapping rule: {key}")
+          if observed != expected:
+              raise SystemExit(f"unexpected routes: {observed}")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("route materialization cannot promote readiness by itself")
+          PY
+      - name: Publish route evidence
+        if: always()
+        run: |
+          if [ -f cvm-fca-historical-model-routes.json ]; then
+            cat cvm-fca-historical-model-routes.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-fca-historical-model-routes-evidence
+          path: cvm-fca-historical-model-routes.json
+          if-no-files-found: error
+          retention-days: 14
