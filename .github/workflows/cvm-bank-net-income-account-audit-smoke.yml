@@ -1,0 +1,79 @@
+name: cvm-bank-net-income-account-audit-smoke
+
+on:
+  pull_request:
+    paths:
+      - "src/ultimate_stock_analyzer/backtesting/cvm_bank_net_income_account_audit.py"
+      - "tests/test_cvm_bank_net_income_account_audit.py"
+      - "scripts/cvm_bank_net_income_account_audit.py"
+      - "docs/POST_M20_CVM_BANK_NET_INCOME_ACCOUNT_AUDIT.md"
+      - ".github/workflows/cvm-bank-net-income-account-audit-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live CVM bank net-income account audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_bank_net_income_account_audit.py \
+            --cvm-code 19348 \
+            --year 2024 \
+            --year 2025 \
+            --output cvm-bank-net-income-account-audit.json
+      - name: Validate fail-closed account evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-bank-net-income-account-audit.json").read_text(encoding="utf-8")
+          )
+          if report["effect"] != "diagnostic_only_cvm_bank_net_income_account_mapping":
+              raise SystemExit("unexpected CVM bank account-audit effect")
+          if report["audited_years"] != [2024, 2025]:
+              raise SystemExit("unexpected audited year set")
+          if len(report["dfp_archives"]) != 2:
+              raise SystemExit("expected one official DFP archive per year")
+          for archive in report["dfp_archives"]:
+              if archive["size_bytes"] <= 0 or len(archive["sha256"]) != 64:
+                  raise SystemExit("DFP archive provenance is incomplete")
+          if len(report["periods"]) != 2:
+              raise SystemExit("expected one account audit per fiscal year")
+          for period in report["periods"]:
+              if period["dre_line_count"] <= 0:
+                  raise SystemExit("issuer DRE evidence is empty")
+              if "CVM_BANK_NET_INCOME_ACCOUNT_UNPROVEN" not in period["blockers"]:
+                  raise SystemExit("required net-income mapping blocker disappeared")
+              if period["mapping_proven"] or period["readiness_promotion_allowed"]:
+                  raise SystemExit("account mapping audit must remain fail-closed")
+          if report["mapping_proven"] or report["readiness_promotion_allowed"]:
+              raise SystemExit("diagnostic report must not promote bank readiness")
+          PY
+      - name: Publish account evidence
+        if: always()
+        run: |
+          if [ -f cvm-bank-net-income-account-audit.json ]; then
+            cat cvm-bank-net-income-account-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-bank-net-income-account-evidence
+          path: cvm-bank-net-income-account-audit.json
+          if-no-files-found: error
+          retention-days: 14
