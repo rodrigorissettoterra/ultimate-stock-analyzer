@@ -4,6 +4,11 @@ from ultimate_stock_analyzer.bootstrap.coverage import (
     FundamentalCoverageSummary,
 )
 from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
+from ultimate_stock_analyzer.bootstrap.historical_model_routes import (
+    FCAHistoricalModelRouteSource,
+    HistoricalModelRouteSource,
+    persist_historical_model_routes,
+)
 from ultimate_stock_analyzer.bootstrap.public_data import (
     PublicDataBootstrapManifest,
     PublicDataBootstrapPlan,
@@ -12,10 +17,13 @@ from ultimate_stock_analyzer.bootstrap.public_data import (
 
 __all__ = [
     "BootstrapDataset",
+    "FCAHistoricalModelRouteSource",
     "FundamentalCoverageProfiler",
     "FundamentalCoverageRecord",
     "FundamentalCoverageSummary",
+    "HistoricalModelRouteSource",
     "PublicDataBootstrapManifest",
     "PublicDataBootstrapPlan",
     "PublicDataBootstrapService",
+    "persist_historical_model_routes",
 ]
