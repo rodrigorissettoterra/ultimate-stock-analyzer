@@ -1,0 +1,139 @@
+name: cvm-ipe-pillar3-numeric-values-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cvm-ipe-pillar3-numeric-values-audit-smoke.yml"
+      - "scripts/cvm_ipe_pillar3_numeric_values_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_numeric_values.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/collectors/cvm_ipe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project audit dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[audit]"
+      - name: Run live Pillar 3 numeric-value audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/cvm_ipe_pillar3_numeric_values_audit.py \
+            --cvm-code 19348 \
+            --reference-date 2024-12-31 \
+            --reference-date 2025-12-31 \
+            --output cvm-ipe-pillar3-numeric-values-audit.json
+      - name: Validate version-aware numeric evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("cvm-ipe-pillar3-numeric-values-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          expected_effect = "pillar3_numeric_extraction_ready_bank_readiness_unchanged"
+          if report["effect"] != expected_effect:
+              raise SystemExit("unexpected numeric-value audit effect")
+          if report["company_id"] != "cvm:19348":
+              raise SystemExit("unexpected canonical Itaú CVM identity")
+          if report["observed_filing_count"] != 4:
+              raise SystemExit("expected four observed versioned Pillar 3 filings")
+          if report["extracted_observation_count"] != 4:
+              raise SystemExit("expected four extracted prudential observations")
+          if report["periods_with_multiple_observed_filings"] != 2:
+              raise SystemExit("expected two periods with re-presentations")
+          if report["extraction_failures"]:
+              raise SystemExit("unexpected live extraction failure")
+          if not report["numeric_extraction_contract_ready"]:
+              raise SystemExit("numeric extraction contract should be validated")
+
+          timelines = {
+              item["prudential_reference_date"]: item["observations"]
+              for item in report["timelines"]
+          }
+          expected = {
+              "2024-12-31": {
+                  "core_equity_tier1_ratio": 0.137,
+                  "tier1_ratio": 0.150,
+                  "basel_ratio": 0.165,
+                  "leverage_ratio": 0.074,
+              },
+              "2025-12-31": {
+                  "core_equity_tier1_ratio": 0.123,
+                  "tier1_ratio": 0.138,
+                  "basel_ratio": 0.152,
+                  "leverage_ratio": 0.070,
+              },
+          }
+          if set(timelines) != set(expected):
+              raise SystemExit("unexpected prudential reference-date coverage")
+          for reference_date, observations in timelines.items():
+              if len(observations) != 2:
+                  raise SystemExit("expected version 1 and version 2 observations")
+              if [item["version"] for item in observations] != [1, 2]:
+                  raise SystemExit("unexpected filing version order")
+              for observation in observations:
+                  for key, value in expected[reference_date].items():
+                      if abs(observation[key] - value) > 1e-12:
+                          raise SystemExit(
+                              f"unexpected {reference_date} {key}: {observation[key]}"
+                          )
+                  if not observation["observed_filing_point_in_time_eligible"]:
+                      raise SystemExit("observed filing should be timeline-eligible")
+
+          as_of = {
+              (item["reference_date"], item["as_of"]): item["selected"]
+              for item in report["as_of_examples"]
+          }
+          checks = {
+              ("2024-12-31", "2025-03-31T00:00:00+00:00"): 1,
+              ("2024-12-31", "2025-04-01T00:00:00+00:00"): 2,
+              ("2025-12-31", "2026-03-31T00:00:00+00:00"): 1,
+              ("2025-12-31", "2026-04-01T00:00:00+00:00"): 2,
+          }
+          for key, expected_version in checks.items():
+              selected = as_of.get(key)
+              if selected is None or selected["version"] != expected_version:
+                  raise SystemExit(f"unexpected as-of selection for {key}")
+
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required fail-closed blockers disappeared")
+          if "PILLAR3_NUMERIC_VALUE_EXTRACTION_UNPROVEN" in report["blockers"]:
+              raise SystemExit("numeric extraction blocker should be resolved")
+          if report["bank_evidence_point_in_time_ready"]:
+              raise SystemExit("numeric extraction incorrectly promoted bank readiness")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("numeric extraction incorrectly allowed readiness promotion")
+          PY
+      - name: Publish numeric-value evidence
+        if: always()
+        run: |
+          if [ -f cvm-ipe-pillar3-numeric-values-audit.json ]; then
+            cat cvm-ipe-pillar3-numeric-values-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cvm-ipe-pillar3-numeric-values-evidence
+          path: cvm-ipe-pillar3-numeric-values-audit.json
+          if-no-files-found: error
+          retention-days: 14
