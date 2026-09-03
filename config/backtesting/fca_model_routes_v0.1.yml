@@ -1,0 +1,10 @@
+schema_version: "0.1"
+mapping_rule_version: "fca-sector-activity-v0.1"
+sector_registry_version: "0.6.3"
+mappings:
+  - sector_activity: "Bancos"
+    model_id: "banks"
+  - sector_activity: "Petróleo e Gás"
+    model_id: "commodities"
+  - sector_activity: "Extração Mineral"
+    model_id: "commodities"
