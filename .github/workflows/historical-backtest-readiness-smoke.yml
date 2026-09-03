@@ -6,9 +6,18 @@ on:
     paths:
       - ".github/workflows/historical-backtest-readiness-smoke.yml"
       - "scripts/historical_backtest_readiness_audit.py"
+      - "scripts/historical_event_aware_m15_integration.py"
       - "src/ultimate_stock_analyzer/backtesting/readiness.py"
+      - "src/ultimate_stock_analyzer/backtesting/readiness_corporate_actions.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_event_dataset.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_event_aware_coverage.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_share_action_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/portfolio.py"
+      - "src/ultimate_stock_analyzer/backtesting/returns.py"
       - "src/ultimate_stock_analyzer/bootstrap/**"
       - "src/ultimate_stock_analyzer/collectors/b3_classification.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
+      - "src/ultimate_stock_analyzer/collectors/b3_dividends.py"
       - "src/ultimate_stock_analyzer/collectors/bcb_ifdata.py"
       - "src/ultimate_stock_analyzer/collectors/cvm.py"
       - "src/ultimate_stock_analyzer/domain/master.py"
@@ -39,10 +48,23 @@ jobs:
         id: years
         shell: bash
         run: |
-          END_YEAR=$(python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).year - 1)')
+          CURRENT_YEAR=$(date -u +%Y)
+          END_YEAR=$((CURRENT_YEAR - 1))
           START_YEAR=$((END_YEAR - 1))
           echo "start=$START_YEAR" >> "$GITHUB_OUTPUT"
           echo "end=$END_YEAR" >> "$GITHUB_OUTPUT"
+      - name: Run bounded event-aware M15 capability evidence
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/historical_event_aware_m15_integration.py \
+            --sample MGLU:MGLU3 \
+            --sample ITSA:ITSA4 \
+            --sample B3SA:B3SA3 \
+            --sample AMER:AMER3 \
+            --start-year 2024 \
+            --end-year 2025 \
+            --output historical-event-aware-m15-integration.json
       - name: Run fail-closed historical readiness audit
         env:
           PYTHONUNBUFFERED: "1"
@@ -54,10 +76,14 @@ jobs:
             --ticker VALE3 \
             --ticker ITUB4 \
             --data-dir "${{ runner.temp }}/ultimate-stock-analyzer-readiness" \
+            --event-aware-integration-report historical-event-aware-m15-integration.json \
             --output historical-backtest-readiness.json
       - name: Publish readiness evidence
         if: always()
         run: |
+          if [ -f historical-event-aware-m15-integration.json ]; then
+            cat historical-event-aware-m15-integration.json
+          fi
           if [ -f historical-backtest-readiness.json ]; then
             cat historical-backtest-readiness.json
           fi
@@ -65,6 +91,8 @@ jobs:
         if: always()
         with:
           name: historical-backtest-readiness
-          path: historical-backtest-readiness.json
+          path: |
+            historical-event-aware-m15-integration.json
+            historical-backtest-readiness.json
           if-no-files-found: error
           retention-days: 14
