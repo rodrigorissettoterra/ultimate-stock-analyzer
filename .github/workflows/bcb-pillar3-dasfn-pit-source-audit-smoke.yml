@@ -1,0 +1,104 @@
+name: bcb-pillar3-dasfn-pit-source-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bcb-pillar3-dasfn-pit-source-audit-smoke.yml"
+      - "scripts/bcb_pillar3_dasfn_pit_source_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/bcb_pillar3_dasfn_pit_source_audit.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run live BCB Pillar 3 DASFN PIT source audit
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/bcb_pillar3_dasfn_pit_source_audit.py \
+            --output bcb-pillar3-dasfn-pit-source-audit.json
+      - name: Validate fail-closed DASFN boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("bcb-pillar3-dasfn-pit-source-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          expected_effect = (
+              "diagnostic_only_pillar3_dasfn_pit_source_no_readiness_change"
+          )
+          if report["effect"] != expected_effect:
+              raise SystemExit("unexpected Pillar 3 DASFN audit effect")
+          if report["catalog_row_count"] <= 0:
+              raise SystemExit("DASFN catalog sample returned no rows")
+          if report["catalog_size_bytes"] <= 0:
+              raise SystemExit("DASFN catalog sample is empty")
+          if len(report["catalog_sha256"]) != 64:
+              raise SystemExit("DASFN raw catalog provenance is incomplete")
+          observations = {
+              item["version_family"]: item
+              for item in report["version_observations"]
+          }
+          if set(observations) != {"v1", "v2"}:
+              raise SystemExit("expected DASFN observations for v1 and v2")
+          if any(item["row_count"] <= 0 for item in observations.values()):
+              raise SystemExit("one DASFN version family has no rows")
+          coverage = report["structured_coverage"]
+          if coverage["v1_max_reference_date"] != "2023-06-30":
+              raise SystemExit("unexpected Pillar 3 v1 coverage boundary")
+          if coverage["v2_min_reference_date"] != "2025-12-31":
+              raise SystemExit("unexpected Pillar 3 v2 coverage boundary")
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_DASFN_HISTORICAL_VINTAGE_QUERY_UNPROVEN",
+              "PILLAR3_DASFN_PAYLOAD_PUBLICATION_TIMESTAMP_UNPROVEN",
+              "PILLAR3_DASFN_REVISION_HISTORY_UNPROVEN",
+              "PILLAR3_DASFN_STRUCTURED_COVERAGE_GAP",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required Pillar 3 DASFN blockers disappeared")
+          if report["institution_payloads_sampled"]:
+              raise SystemExit("source-contract audit must not claim payload sampling")
+          if report["payload_publication_timestamp_proven"]:
+              raise SystemExit("payload publication timestamp was not proven")
+          if report["revision_history_proven"]:
+              raise SystemExit("revision history was not proven")
+          if report["historical_vintage_query_proven"]:
+              raise SystemExit("historical vintage query was not proven")
+          if report["historical_replay_ready"]:
+              raise SystemExit("DASFN historical replay must remain blocked")
+          if report["bank_evidence_point_in_time_ready"]:
+              raise SystemExit("bank PIT evidence must remain blocked")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("diagnostic audit must not promote readiness")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f bcb-pillar3-dasfn-pit-source-audit.json ]; then
+            cat bcb-pillar3-dasfn-pit-source-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bcb-pillar3-dasfn-pit-source-evidence
+          path: bcb-pillar3-dasfn-pit-source-audit.json
+          if-no-files-found: error
+          retention-days: 14
