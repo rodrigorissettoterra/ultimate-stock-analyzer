@@ -4,39 +4,45 @@ Status: diagnostic only; no historical-readiness promotion.
 
 ## Goal
 
-When the official central Olinda server-side filter for `Api=pilar3` returns HTTP 400,
-the project still needs a bounded, auditable way to determine whether the current
-central DASFN catalog exposes Pillar 3 resources.
+Audit the current central BCB DASFN `Recursos` catalog without relying on the
+server-side `Api=pilar3` filter, which is currently returning HTTP 400. The audit
+uses documented OData pagination and performs the Pillar 3 selection locally.
 
-This block performs a current-catalog snapshot using only documented OData
-pagination and projection:
+## Collection contract
 
-- endpoint: `DASFN/versao/v1/odata/Recursos`;
+The implementation uses the exact official `Recursos` endpoint with:
+
 - no `$filter`;
+- `$format=json`;
 - `$select=Api,Versao,CnpjInstituicao,Recurso,URLDados`;
-- fixed `$top`;
-- contiguous `$skip`;
-- bounded maximum page count;
-- local `Api=pilar3` selection only after every collected row satisfies the
-  central-resource structural contract.
+- fixed `$top` and contiguous `$skip`;
+- exact final-URL/query preservation;
+- whole-page SHA-256 and HTTP/transport provenance.
 
-It remains a discovery audit. It does not make bank evidence point-in-time ready.
+The CLI remains conservative by default at 500 rows × 20 pages (10,000 rows).
+The live verification workflow intentionally uses an expanded bound of 500 rows ×
+100 pages (50,000 rows) because the first live run reached the former 10,000-row
+cap with a full final page. The expanded workflow is still bounded and requests
+only the five central fields needed for the audit.
 
-## Why this is separate from the filtered-source audit
+## First live observation
 
-The preceding source-contract audit established two facts:
+The initial 10,000-row run remained correctly fail-closed as
+`PILLAR3_DASFN_CATALOG_SNAPSHOT_INCOMPLETE`. Within those first 10,000 central
+rows it observed:
 
-1. the minimal central `Recursos` endpoint can be reachable;
-2. the BCB-published server-side `Api eq 'pilar3'` query can fail independently.
+- 9,473 Pillar 3 rows;
+- 245 institutions;
+- versions `1.2.0`, `2.0.0`, and `2.0.1`;
+- both v1 and v2 version families;
+- 109 distinct resource templates.
 
-That failure must not be worked around by inventing undocumented filter syntax.
-A bounded unfiltered traversal is a different, documented operation and therefore
-gets its own audit and provenance.
+Those observations are discovery evidence only. They do not prove that the
+10,000-row prefix represented the complete central catalog.
 
-## Minimal-data boundary
+## Central contract before local filtering
 
-The live script deliberately avoids collecting unnecessary central catalog fields.
-It requests only:
+Every collected row must provide non-empty:
 
 - `Api`;
 - `Versao`;
@@ -44,29 +50,12 @@ It requests only:
 - `Recurso`;
 - `URLDados`.
 
-The default live bound is 500 rows × 20 pages = at most 10,000 rows.
+`CnpjInstituicao` must contain 14 digits. Structural validation applies to the
+whole collected catalog before local `Api=pilar3` selection is considered usable.
 
-No institution contact data is requested.
-
-## Page trust contract
-
-Every input page must:
-
-- target the exact official BCB DASFN `Recursos` endpoint;
-- request `$format=json`;
-- request the exact bounded `$select`;
-- use the page metadata's `$top` and `$skip`;
-- contain no `$filter`;
-- contain no unsupported query parameters;
-- form a contiguous sequence beginning at `skip=0`.
-
-An HTTP 2xx response is trusted only if the final URL preserves the same endpoint
-and the same `$format/$select/$top/$skip` contract. Redirects that add a filter,
-change pagination, leave the endpoint, or introduce unsupported parameters are
-preserved as evidence but are not trusted.
-
-For every page the audit stores HTTP/transport provenance including SHA-256 and
-body size when a response exists.
+Selected Pillar 3 rows must belong strictly to the recognized `1`/`1.x` or
+`2`/`2.x` version families. Unknown families such as `10.x` block the local
+selection rather than being ignored.
 
 ## Snapshot completeness
 
@@ -76,43 +65,13 @@ A snapshot is complete only when:
 - every non-final page contains exactly `$top` rows;
 - the final page contains fewer than `$top` rows.
 
-A full last page at the configured `max-pages` limit is not treated as complete.
-The audit adds `PILLAR3_DASFN_CATALOG_SNAPSHOT_INCOMPLETE`.
-
-## Central contract before local filtering
-
-The whole traversed catalog must satisfy the minimum central row contract before
-the local Pillar 3 result can be called discovery-ready.
-
-Every row must provide non-empty:
-
-- `Api`;
-- `Versao`;
-- `CnpjInstituicao`;
-- `Recurso`;
-- `URLDados`.
-
-`CnpjInstituicao` must contain 14 digits.
-
-This requirement applies even to non-Pillar-3 rows. A malformed row could
-otherwise hide relevant data and make an incomplete/ambiguous traversal look
-healthy.
-
-## Local Pillar 3 selection
-
-Only after structural validation does the audit select rows where
-`Api.casefold() == "pilar3"`.
-
-Selected rows must use recognized `1`/`1.x` or `2`/`2.x` version families.
-Unknown families such as `10.x` block local-filter usability instead of being
-silently ignored.
-
-The audit exposes current observations including versions, resources and
-institution CNPJs. These are discovery evidence only.
+Reaching the configured page cap with a full last page remains
+`PILLAR3_DASFN_CATALOG_SNAPSHOT_INCOMPLETE`, regardless of how many usable rows
+were observed.
 
 ## Fail-closed PIT boundary
 
-The following blockers remain invariant:
+The invariant blockers remain:
 
 - `BANK_EVIDENCE_NOT_POINT_IN_TIME`;
 - `PILLAR3_DASFN_HISTORICAL_VINTAGE_QUERY_UNPROVEN`;
@@ -120,48 +79,17 @@ The following blockers remain invariant:
 - `PILLAR3_DASFN_REVISION_HISTORY_UNPROVEN`;
 - `PILLAR3_DASFN_STRUCTURED_COVERAGE_GAP`.
 
-Additional snapshot blockers include:
-
-- `PILLAR3_DASFN_CATALOG_PAGE_UNAVAILABLE`;
-- `PILLAR3_DASFN_CATALOG_SNAPSHOT_INCOMPLETE`;
-- `PILLAR3_DASFN_CATALOG_SNAPSHOT_CONTRACT_UNUSABLE`;
-- `PILLAR3_DASFN_LOCAL_FILTER_NO_ROWS`;
-- `PILLAR3_DASFN_LOCAL_FILTER_ROW_UNUSABLE`;
-- `PILLAR3_DASFN_SNAPSHOT_FINAL_URL_UNTRUSTED`.
-
-Even a fully successful current snapshot keeps:
+A successful current snapshot never changes:
 
 - `historical_vintage_query_proven=false`;
 - `historical_replay_ready=false`;
 - `bank_evidence_point_in_time_ready=false`;
 - `readiness_promotion_allowed=false`.
 
-## Implementation
-
-This block adds:
-
-- `src/ultimate_stock_analyzer/backtesting/bcb_pillar3_dasfn_catalog_snapshot_audit.py`;
-- `tests/test_bcb_pillar3_dasfn_catalog_snapshot_audit.py`;
-- `scripts/bcb_pillar3_dasfn_catalog_snapshot_audit.py`;
-- `.github/workflows/bcb-pillar3-dasfn-catalog-snapshot-audit-smoke.yml`;
-- this document.
-
-Report effect:
-
-`diagnostic_only_dasfn_unfiltered_snapshot_no_readiness_change`
-
-Schema version: `0.1`.
-
 ## Next evidence step
 
-If current Pillar 3 rows are discovered, the next step is a bounded
-institution-payload audit using the central `URLDados` values. That audit must
-prove, separately:
-
-1. payload publication timing;
-2. revision lineage/history;
-3. historical addressability or another strict as-of mechanism;
-4. consolidation/contract compatibility for the target bank field.
-
-Only after those are proven may any Pillar 3 observation contribute to
-`BankFieldEvidenceRoutingReport` as `POINT_IN_TIME_ADMISSIBLE`.
+Once a complete current snapshot is observed within the expanded bound, select a
+small deterministic institution/resource sample from central `URLDados` values
+and audit institution-hosted payload provenance. That audit must separately prove
+publication timing, revision lineage, historical addressability, and contract
+scope before any Pillar 3 field can become point-in-time admissible.
