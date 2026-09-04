@@ -8,6 +8,12 @@ from ultimate_stock_analyzer.backtesting.b3_share_action_conversion import (
     B3ShareActionConversion,
     convert_b3_stock_action,
 )
+from ultimate_stock_analyzer.backtesting.b3_subscription_right_conversion import (
+    SUBSCRIPTION_RIGHT_IDENTITY_INSUFFICIENT,
+    SUBSCRIPTION_RIGHT_ISIN_MISMATCH,
+    B3SubscriptionRightConversion,
+    convert_b3_subscription_right,
+)
 from ultimate_stock_analyzer.backtesting.models import CashDistribution
 from ultimate_stock_analyzer.collectors.b3_corporate_actions import (
     B3CorporateActionsContractAuditor,
@@ -111,11 +117,14 @@ class B3EventAwareCoverageAudit:
     converted_cash_distribution_count: int
     blocked_cash_distribution_count: int
     relevant_subscription_count: int
+    converted_subscription_right_count: int
+    blocked_subscription_right_count: int
     unsupported_event_count: int
     ambiguous_event_scope_count: int
     event_identity_mismatch_count: int
     share_conversions: tuple[B3ShareActionConversion, ...]
     cash_conversions: tuple[B3CashDistributionConversion, ...]
+    subscription_conversions: tuple[B3SubscriptionRightConversion, ...]
     unsupported_stock_events: tuple[dict[str, Any], ...]
     unsupported_subscriptions: tuple[dict[str, Any], ...]
     unparsed_cash_events: tuple[dict[str, Any], ...]
@@ -129,7 +138,7 @@ class B3EventAwareCoverageAudit:
     price_adjustment_applied: bool = False
     price_series_blocker_removed: bool = False
     effect: str = "diagnostic_only_event_aware_coverage_no_readiness_change"
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,11 +159,16 @@ class B3EventAwareCoverageAudit:
             "blocked_cash_distribution_count": self.blocked_cash_distribution_count,
             "relevant_subscription_count": self.relevant_subscription_count,
             "subscription_count": self.relevant_subscription_count,
+            "converted_subscription_right_count": self.converted_subscription_right_count,
+            "blocked_subscription_right_count": self.blocked_subscription_right_count,
             "unsupported_event_count": self.unsupported_event_count,
             "ambiguous_event_scope_count": self.ambiguous_event_scope_count,
             "event_identity_mismatch_count": self.event_identity_mismatch_count,
             "share_conversions": [item.to_dict() for item in self.share_conversions],
             "cash_conversions": [item.to_dict() for item in self.cash_conversions],
+            "subscription_conversions": [
+                item.to_dict() for item in self.subscription_conversions
+            ],
             "unsupported_stock_events": list(self.unsupported_stock_events),
             "unsupported_subscriptions": list(self.unsupported_subscriptions),
             "unparsed_cash_events": list(self.unparsed_cash_events),
@@ -267,11 +281,12 @@ def convert_b3_cash_distribution(
             blockers=(CASH_DISTRIBUTION_EX_BAR_MISSING,),
         )
 
-    bar_isins: set[str] = {
-        _optional_identity(com_bar.isin),
-        _optional_identity(ex_bar.isin),
+    bar_isins = {
+        normalized
+        for bar in (com_bar, ex_bar)
+        for normalized in [_optional_identity(bar.isin)]
+        if normalized is not None
     }
-    bar_isins.discard(None)
     asserted_isins = {
         value
         for value in (event_isin, asset_issued_isin)
@@ -386,16 +401,16 @@ def audit_b3_event_aware_coverage(
 
     relevant_stock: list[B3StockActionContractRecord] = []
     unsupported_stock: list[dict[str, Any]] = []
-    for event in contract.stock_actions:
-        if event.last_date_prior is not None and not _event_in_window(
-            event.last_date_prior,
+    for stock_event in contract.stock_actions:
+        if stock_event.last_date_prior is not None and not _event_in_window(
+            stock_event.last_date_prior,
             start_date,
             end_date,
         ):
             continue
         scope = _event_scope(
-            asset_issued=event.asset_issued,
-            isin=event.isin_code,
+            asset_issued=stock_event.asset_issued,
+            isin=stock_event.isin_code,
             ticker=normalized_ticker,
             target_isins=target_isins,
         )
@@ -405,27 +420,25 @@ def audit_b3_event_aware_coverage(
             continue
         if scope == _OTHER:
             continue
-        if event.last_date_prior is None:
+        if stock_event.last_date_prior is None:
             observed_blockers.add(RELEVANT_EVENT_DATE_UNAVAILABLE)
-            relevant_stock.append(event)
-        else:
-            relevant_stock.append(event)
-        if not event.supported_label:
+        relevant_stock.append(stock_event)
+        if not stock_event.supported_label:
             observed_blockers.add(UNSUPPORTED_RELEVANT_STOCK_EVENT)
-            unsupported_stock.append(event.to_dict())
+            unsupported_stock.append(stock_event.to_dict())
 
     share_conversions: list[B3ShareActionConversion] = []
-    for event in relevant_stock:
-        if not event.supported_label:
+    for stock_event in relevant_stock:
+        if not stock_event.supported_label:
             continue
-        conversion = convert_b3_stock_action(
+        share_conversion = convert_b3_stock_action(
             issuing_company=normalized_company,
             ticker=normalized_ticker,
-            event=event,
+            event=stock_event,
             bars=bars,
         )
-        share_conversions.append(conversion)
-        observed_blockers.update(conversion.blockers)
+        share_conversions.append(share_conversion)
+        observed_blockers.update(share_conversion.blockers)
 
     relevant_payments: list[DividendPayment] = []
     for payment in payments:
@@ -465,21 +478,23 @@ def audit_b3_event_aware_coverage(
         )
         for payment in relevant_payments
     ]
-    for conversion in cash_conversions:
-        observed_blockers.update(conversion.blockers)
+    for cash_conversion in cash_conversions:
+        observed_blockers.update(cash_conversion.blockers)
 
     relevant_subscriptions: list[B3SubscriptionContractRecord] = []
-    unsupported_subscriptions: list[dict[str, Any]] = []
-    for event in contract.subscriptions:
-        if event.last_date_prior is not None and not _event_in_window(
-            event.last_date_prior,
-            start_date,
-            end_date,
+    for subscription_event in contract.subscriptions:
+        if (
+            subscription_event.last_date_prior is not None
+            and not _event_in_window(
+                subscription_event.last_date_prior,
+                start_date,
+                end_date,
+            )
         ):
             continue
         scope = _event_scope(
-            asset_issued=event.asset_issued,
-            isin=event.isin_code,
+            asset_issued=subscription_event.asset_issued,
+            isin=subscription_event.isin_code,
             ticker=normalized_ticker,
             target_isins=target_isins,
         )
@@ -489,33 +504,47 @@ def audit_b3_event_aware_coverage(
             continue
         if scope == _OTHER:
             continue
-        if event.last_date_prior is None:
+        if subscription_event.last_date_prior is None:
             observed_blockers.add(RELEVANT_EVENT_DATE_UNAVAILABLE)
-            relevant_subscriptions.append(event)
-        else:
-            relevant_subscriptions.append(event)
-        unsupported_subscriptions.append(event.to_dict())
-        observed_blockers.add(UNSUPPORTED_RELEVANT_SUBSCRIPTION)
+        relevant_subscriptions.append(subscription_event)
+
+    subscription_conversions: list[B3SubscriptionRightConversion] = []
+    unsupported_subscriptions: list[dict[str, Any]] = []
+    for subscription_event in relevant_subscriptions:
+        subscription_conversion = convert_b3_subscription_right(
+            ticker=normalized_ticker,
+            event=subscription_event,
+            bars=bars,
+        )
+        subscription_conversions.append(subscription_conversion)
+        observed_blockers.update(subscription_conversion.blockers)
+        if not subscription_conversion.converted:
+            unsupported_subscriptions.append(subscription_event.to_dict())
+            observed_blockers.add(UNSUPPORTED_RELEVANT_SUBSCRIPTION)
 
     share_dates = {
         item.action.ex_date
         for item in share_conversions
         if item.action is not None
     }
-    cash_dates = {
+    distribution_dates = {
         item.distribution.ex_date
         for item in cash_conversions
         if item.distribution is not None
+    } | {
+        item.distribution.ex_date
+        for item in subscription_conversions
+        if item.distribution is not None
     }
-    if share_dates & cash_dates:
+    if share_dates & distribution_dates:
         observed_blockers.add(SAME_SESSION_SHARE_AND_CASH_ORDERING_UNVERIFIED)
 
     converted_share = sum(item.converted for item in share_conversions)
     converted_cash = sum(item.converted for item in cash_conversions)
-    blocked_share = (
-        len(relevant_stock) - len(unsupported_stock) - converted_share
-    )
+    converted_subscription = sum(item.converted for item in subscription_conversions)
+    blocked_share = len(relevant_stock) - len(unsupported_stock) - converted_share
     blocked_cash = len(relevant_payments) - converted_cash
+    blocked_subscription = len(relevant_subscriptions) - converted_subscription
 
     observed = tuple(sorted(observed_blockers))
     strict = tuple(
@@ -529,16 +558,26 @@ def audit_b3_event_aware_coverage(
         CASH_DISTRIBUTION_SCOPE_MISMATCH,
         CASH_DISTRIBUTION_ISIN_MISMATCH,
         CASH_DISTRIBUTION_IDENTITY_INSUFFICIENT,
+        SUBSCRIPTION_RIGHT_IDENTITY_INSUFFICIENT,
+        SUBSCRIPTION_RIGHT_ISIN_MISMATCH,
         AMBIGUOUS_STOCK_EVENT_SCOPE,
         AMBIGUOUS_CASH_EVENT_SCOPE,
         AMBIGUOUS_SUBSCRIPTION_SCOPE,
     }
-    identity_mismatches = ambiguous_scope_count + sum(
-        bool(set(item.blockers) & identity_blockers)
-        for item in cash_conversions
-    ) + sum(
-        any("ISIN_MISMATCH" in blocker for blocker in item.blockers)
-        for item in share_conversions
+    identity_mismatches = (
+        ambiguous_scope_count
+        + sum(
+            bool(set(item.blockers) & identity_blockers)
+            for item in cash_conversions
+        )
+        + sum(
+            bool(set(item.blockers) & identity_blockers)
+            for item in subscription_conversions
+        )
+        + sum(
+            any("ISIN_MISMATCH" in blocker for blocker in item.blockers)
+            for item in share_conversions
+        )
     )
     price_bar_count = sum(
         bar.ticker.upper() == normalized_ticker
@@ -561,6 +600,8 @@ def audit_b3_event_aware_coverage(
         converted_cash_distribution_count=converted_cash,
         blocked_cash_distribution_count=blocked_cash + len(unparsed_cash),
         relevant_subscription_count=len(relevant_subscriptions),
+        converted_subscription_right_count=converted_subscription,
+        blocked_subscription_right_count=blocked_subscription,
         unsupported_event_count=(
             len(unsupported_stock) + len(unsupported_subscriptions) + len(unparsed_cash)
         ),
@@ -568,6 +609,7 @@ def audit_b3_event_aware_coverage(
         event_identity_mismatch_count=identity_mismatches,
         share_conversions=tuple(share_conversions),
         cash_conversions=tuple(cash_conversions),
+        subscription_conversions=tuple(subscription_conversions),
         unsupported_stock_events=tuple(unsupported_stock),
         unsupported_subscriptions=tuple(unsupported_subscriptions),
         unparsed_cash_events=tuple(unparsed_cash),
