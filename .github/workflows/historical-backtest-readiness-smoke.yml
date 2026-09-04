@@ -26,8 +26,11 @@ on:
       - "src/ultimate_stock_analyzer/market/prices.py"
       - "src/ultimate_stock_analyzer/orchestration/cvm_ingestion.py"
       - "src/ultimate_stock_analyzer/scoring/sector_models.py"
+      - "config/backtesting/fca_model_routes_v0.2.yml"
       - "config/scoring/sector_registry_v0.6.yml"
       - "config/scoring/sectors/**"
+      - "tests/test_historical_fundamental_coverage.py"
+      - "tests/test_historical_route_readiness.py"
       - "tests/test_raw_price_provenance.py"
       - "tests/test_readiness_corporate_actions.py"
 

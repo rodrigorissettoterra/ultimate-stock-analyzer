@@ -26,6 +26,9 @@ from ultimate_stock_analyzer.backtesting.readiness_corporate_actions import (
 )
 from ultimate_stock_analyzer.bootstrap.coverage import FundamentalCoverageProfiler
 from ultimate_stock_analyzer.bootstrap.dataset import BootstrapDataset
+from ultimate_stock_analyzer.bootstrap.historical_model_routes import (
+    persist_historical_model_routes,
+)
 from ultimate_stock_analyzer.bootstrap.public_data import (
     PublicDataBootstrapPlan,
     PublicDataBootstrapService,
@@ -34,8 +37,8 @@ from ultimate_stock_analyzer.scoring.sector_models import SectorModelRegistry
 
 
 DEFAULT_REGISTRY = "config/scoring/sector_registry_v0.6.yml"
+DEFAULT_FCA_ROUTE_MAPPING = "config/backtesting/fca_model_routes_v0.2.yml"
 EXPECTED_SOURCE_BLOCKERS = {
-    SECTOR_ROUTING_NOT_POINT_IN_TIME,
     BANK_EVIDENCE_NOT_POINT_IN_TIME,
     PRICE_SERIES_UNADJUSTED_FOR_CORPORATE_ACTIONS,
 }
@@ -53,6 +56,10 @@ def main() -> None:
     parser.add_argument("--ticker", action="append", default=[])
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--registry", default=DEFAULT_REGISTRY)
+    parser.add_argument(
+        "--fca-route-mapping",
+        default=DEFAULT_FCA_ROUTE_MAPPING,
+    )
     parser.add_argument(
         "--event-aware-integration-report",
         help=(
@@ -87,7 +94,7 @@ def main() -> None:
         start_year=args.start_year,
         end_year=args.end_year,
         tickers=tickers,
-        include_current_sector_classification=True,
+        include_current_sector_classification=False,
         include_bank_ifdata=True,
     )
     data_dir = Path(args.data_dir)
@@ -95,7 +102,13 @@ def main() -> None:
         plan,
         collected_at=collected_at,
     )
-    dataset = BootstrapDataset(data_dir / "bootstrap" / manifest.run_id)
+    run_dir = data_dir / "bootstrap" / manifest.run_id
+    persist_historical_model_routes(
+        run_dir,
+        mapping_path=args.fca_route_mapping,
+        sector_registry_path=args.registry,
+    )
+    dataset = BootstrapDataset(run_dir)
     audited_raw_price_fingerprint = bootstrap_raw_price_fingerprint(
         dataset,
         start_date=date(args.start_year, 1, 1),
@@ -106,13 +119,17 @@ def main() -> None:
     records, coverage = FundamentalCoverageProfiler(
         dataset,
         sector_registry=registry,
-    ).analyze(generated_at=collected_at)
+    ).analyze(
+        generated_at=collected_at,
+        as_of=collected_at,
+    )
 
     base_report = audit_historical_backtest_readiness(
         dataset,
         coverage,
         generated_at=collected_at,
         coverage_records=records,
+        as_of=collected_at,
     )
     report = integrate_corporate_action_readiness(
         base_report,
@@ -136,6 +153,25 @@ def main() -> None:
             "historical readiness failed to expose expected blockers: "
             + ", ".join(missing_expected)
         )
+    if SECTOR_ROUTING_NOT_POINT_IN_TIME in report.blockers:
+        raise RuntimeError(
+            "persisted FCA historical routes did not replace current-B3 routing blocker"
+        )
+    if report.current_b3_fallback_used:
+        raise RuntimeError("historical readiness used a forbidden current-B3 fallback")
+    if report.historical_route_gap_count:
+        raise RuntimeError(
+            "historical readiness smoke has persisted route gaps: "
+            + ", ".join(
+                f"{gap.company_id}:{gap.fiscal_year}"
+                for gap in report.historical_model_route_gaps
+            )
+        )
+    if (
+        report.historical_route_company_years
+        != report.historical_route_admissible_company_years
+    ):
+        raise RuntimeError("historical route admissibility count is inconsistent")
     if report.bank_profiles < 1:
         raise RuntimeError("historical readiness smoke did not resolve any IFData bank profile")
     if report.expected_ticker_years != report.security_ticker_years:
