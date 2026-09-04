@@ -12,6 +12,7 @@ from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
     BANK_EVIDENCE_NOT_POINT_IN_TIME,
     PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
     PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+    PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE,
     PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
     PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
     PILLAR3_PDF_CONTENT_UNVALIDATED,
@@ -22,6 +23,7 @@ from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
 from ultimate_stock_analyzer.collectors.cvm_ipe import (
     CVMIPECollector,
     CVMIPEDocument,
+    inspect_cvm_ipe_zip_columns,
     parse_cvm_ipe_zip,
 )
 
@@ -73,12 +75,14 @@ def main() -> None:
             response = client.get(url)
             response.raise_for_status()
             content = response.content
+            columns = inspect_cvm_ipe_zip_columns(content)
             snapshots.append(
                 CVMIPEArchiveSnapshot(
                     source_year=year,
                     source_url=url,
                     sha256=hashlib.sha256(content).hexdigest(),
                     size_bytes=len(content),
+                    columns=columns,
                 )
             )
             documents.extend(
@@ -101,6 +105,8 @@ def main() -> None:
     report["warnings"] = [
         "IPE_PUBLIC_VERSION_RETENTION_DOES_NOT_PROVE_OPEN_DATA_EXPORT_COMPLETENESS",
         "CURRENT_ZIPS_ARE_NOT_IMMUTABLE_HISTORICAL_AS_OF_SNAPSHOTS",
+        "PUBLIC_ENET_VISIBILITY_CAN_BE_INHIBITED_AFTER_PUBLICATION",
+        "HISTORICAL_IPE_STATUS_REMAINS_UNPROVEN",
         "DOCUMENT_AVAILABILITY_USES_DELIVERY_DATE_PLUS_ONE_DAY",
         "PILLAR3_PDF_CONTENT_IS_NOT_PARSED_IN_THIS_BLOCK",
         "NO_BANK_READINESS_CHANGE_IN_THIS_BLOCK",
@@ -110,6 +116,7 @@ def main() -> None:
         BANK_EVIDENCE_NOT_POINT_IN_TIME,
         PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
         PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+        PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE,
         PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
         PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
         PILLAR3_PDF_CONTENT_UNVALIDATED,
@@ -119,6 +126,9 @@ def main() -> None:
         raise RuntimeError("fail-closed Pillar 3 blockers must always remain")
     if report["bank_evidence_point_in_time_ready"] or report["readiness_promotion_allowed"]:
         raise RuntimeError("diagnostic Pillar 3 ledger must not promote bank readiness")
+    for snapshot in report["source_archives"]:
+        if not snapshot["columns"]:
+            raise RuntimeError("raw CVM IPE archive schema must be captured")
 
     Path(args.output).write_text(
         json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True),

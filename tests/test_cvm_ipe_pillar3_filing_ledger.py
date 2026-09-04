@@ -5,6 +5,7 @@ from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
     PILLAR3_IPE_DOWNLOAD_URL_MISSING,
     PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
     PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+    PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE,
     PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
     PILLAR3_IPE_PERIOD_FILING_NOT_FOUND,
     PILLAR3_IPE_PERIOD_MARKER_AMBIGUOUS,
@@ -15,7 +16,10 @@ from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
     CVMIPEArchiveSnapshot,
     audit_cvm_ipe_pillar3_filing_ledger,
 )
-from ultimate_stock_analyzer.collectors.cvm_ipe import CVMIPEDocument
+from ultimate_stock_analyzer.collectors.cvm_ipe import (
+    CVM_IPE_REQUIRED_COLUMNS,
+    CVMIPEDocument,
+)
 
 
 def _document(
@@ -51,20 +55,33 @@ def _document(
     )
 
 
-def _snapshot(year: int) -> CVMIPEArchiveSnapshot:
+def _snapshot(year: int, *, include_status: bool = False) -> CVMIPEArchiveSnapshot:
+    columns = tuple(sorted(CVM_IPE_REQUIRED_COLUMNS))
+    if include_status:
+        columns = (*columns, "Status")
     return CVMIPEArchiveSnapshot(
         source_year=year,
         source_url=f"https://dados.cvm.gov.br/ipe_{year}.zip",
         sha256="a" * 64,
         size_bytes=123,
+        columns=columns,
     )
 
 
-def _audit(documents: list[CVMIPEDocument], dates: list[date]):
+def _audit(
+    documents: list[CVMIPEDocument],
+    dates: list[date],
+    *,
+    include_status: bool = False,
+):
     return audit_cvm_ipe_pillar3_filing_ledger(
         cvm_code=19348,
         documents=documents,
-        source_archives=[_snapshot(2024), _snapshot(2025), _snapshot(2026)],
+        source_archives=[
+            _snapshot(2024, include_status=include_status),
+            _snapshot(2025, include_status=include_status),
+            _snapshot(2026, include_status=include_status),
+        ],
         requested_reference_dates=dates,
         generated_at=datetime(2026, 9, 2, tzinfo=UTC),
     )
@@ -132,7 +149,7 @@ def test_missing_period_download_and_period_markers_fail_closed() -> None:
     assert not audit.observed_filing_timeline_available
 
 
-def test_revision_completeness_audit_records_documented_and_missing_contracts() -> None:
+def test_revision_completeness_audit_records_schema_and_visibility_limits() -> None:
     audit = _audit([_document()], [date(2024, 12, 31)])
 
     proof = audit.revision_completeness_audit
@@ -144,7 +161,10 @@ def test_revision_completeness_audit_records_documented_and_missing_contracts() 
         statuses["REAPRESENTED_AND_CANCELLED_DOCUMENTS_REMAIN_VISIBLE"]
         == "DOCUMENTED"
     )
+    assert statuses["PUBLIC_QUERY_VISIBILITY_CAN_BE_INHIBITED"] == "DOCUMENTED"
     assert statuses["OPEN_DATA_ARCHIVE_UPDATE_CONTRACT"] == "DOCUMENTED"
+    assert statuses["OPEN_DATA_RAW_SCHEMA_CAPTURE"] == "OBSERVED"
+    assert statuses["OPEN_DATA_STATUS_FIELD"] == "NOT_OBSERVED_IN_ALL_ARCHIVES"
     assert (
         statuses["OPEN_DATA_EXPORT_ALL_VERSION_COMPLETENESS"]
         == "NOT_DOCUMENTED_IN_AUDITED_SOURCE"
@@ -157,7 +177,25 @@ def test_revision_completeness_audit_records_documented_and_missing_contracts() 
         statuses["EXACT_DELIVERY_TIMESTAMP_IN_PARSED_EXPORT"]
         == "NOT_AVAILABLE_IN_PARSED_CONTRACT"
     )
+    assert statuses["HISTORICAL_STATUS_AT_ARBITRARY_AS_OF"] == "UNPROVEN"
     assert not audit.revision_history_completeness_proven
+
+
+def test_status_schema_observation_is_data_driven_without_promoting_history() -> None:
+    audit = _audit(
+        [_document()],
+        [date(2024, 12, 31)],
+        include_status=True,
+    )
+    statuses = {
+        item.finding_code: item.status
+        for item in audit.revision_completeness_audit.findings
+    }
+
+    assert statuses["OPEN_DATA_STATUS_FIELD"] == "OBSERVED_IN_ALL_ARCHIVES"
+    assert PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE in audit.blockers
+    assert not audit.bank_evidence_point_in_time_ready
+    assert not audit.readiness_promotion_allowed
 
 
 def test_diagnostic_never_promotes_bank_readiness() -> None:
@@ -167,6 +205,7 @@ def test_diagnostic_never_promotes_bank_readiness() -> None:
         BANK_EVIDENCE_NOT_POINT_IN_TIME,
         PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
         PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+        PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE,
         PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
         PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
         PILLAR3_PDF_CONTENT_UNVALIDATED,
