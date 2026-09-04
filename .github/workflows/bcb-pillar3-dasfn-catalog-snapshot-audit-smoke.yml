@@ -1,0 +1,100 @@
+name: bcb-pillar3-dasfn-catalog-snapshot-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bcb-pillar3-dasfn-catalog-snapshot-audit-smoke.yml"
+      - "scripts/bcb_pillar3_dasfn_catalog_snapshot_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/bcb_pillar3_dasfn_catalog_snapshot_audit.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run bounded unfiltered DASFN catalog snapshot audit
+        run: |
+          python scripts/bcb_pillar3_dasfn_catalog_snapshot_audit.py \
+            --top 500 \
+            --max-pages 20 \
+            --output bcb-pillar3-dasfn-catalog-snapshot-audit.json
+      - name: Validate diagnostic boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("bcb-pillar3-dasfn-catalog-snapshot-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["schema_version"] != "0.1":
+              raise SystemExit("unexpected DASFN snapshot audit schema")
+          if report["effect"] != "diagnostic_only_dasfn_unfiltered_snapshot_no_readiness_change":
+              raise SystemExit("unexpected DASFN snapshot audit effect")
+          bounds = report["collection_bounds"]
+          if bounds["server_side_filter_used"]:
+              raise SystemExit("snapshot audit must not use server-side filtering")
+          if bounds["selected_fields"] != [
+              "Api",
+              "Versao",
+              "CnpjInstituicao",
+              "Recurso",
+              "URLDados",
+          ]:
+              raise SystemExit("unexpected DASFN central field selection")
+          if bounds["max_rows"] > 10000:
+              raise SystemExit("snapshot collection exceeded bounded row limit")
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_DASFN_HISTORICAL_VINTAGE_QUERY_UNPROVEN",
+              "PILLAR3_DASFN_PAYLOAD_PUBLICATION_TIMESTAMP_UNPROVEN",
+              "PILLAR3_DASFN_REVISION_HISTORY_UNPROVEN",
+              "PILLAR3_DASFN_STRUCTURED_COVERAGE_GAP",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required DASFN PIT blockers disappeared")
+          if report["current_catalog_discovery_ready"]:
+              if not report["snapshot_complete"]:
+                  raise SystemExit("discovery-ready snapshot must be complete")
+              if not report["central_contract_usable"]:
+                  raise SystemExit("discovery-ready snapshot must satisfy central contract")
+              if not report["local_filter_usable"]:
+                  raise SystemExit("discovery-ready snapshot must satisfy local filter contract")
+              if not report["pillar3_rows"]:
+                  raise SystemExit("discovery-ready snapshot must contain Pillar 3 rows")
+          if report["historical_vintage_query_proven"]:
+              raise SystemExit("current catalog snapshot cannot prove historical vintages")
+          if report["historical_replay_ready"]:
+              raise SystemExit("historical replay must remain blocked")
+          if report["bank_evidence_point_in_time_ready"]:
+              raise SystemExit("bank PIT evidence must remain blocked")
+          if report["readiness_promotion_allowed"]:
+              raise SystemExit("snapshot audit must not promote readiness")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f bcb-pillar3-dasfn-catalog-snapshot-audit.json ]; then
+            cat bcb-pillar3-dasfn-catalog-snapshot-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bcb-pillar3-dasfn-catalog-snapshot-evidence
+          path: bcb-pillar3-dasfn-catalog-snapshot-audit.json
+          if-no-files-found: error
+          retention-days: 14
