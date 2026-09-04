@@ -6,6 +6,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from ultimate_stock_analyzer.backtesting.historical_model_routes import (
+    HistoricalModelRoute,
+    HistoricalModelRouteRegistry,
+)
 from ultimate_stock_analyzer.bootstrap.public_data import (
     BootstrapArtifact,
     PublicDataBootstrapManifest,
@@ -101,6 +105,12 @@ class BootstrapDataset:
                 )
             by_company_year[key] = row
         return list(by_company_year.values())
+
+    def historical_model_routes(self) -> list[HistoricalModelRoute]:
+        rows: list[HistoricalModelRoute] = []
+        for artifact in self._many("cvm_historical_model_route"):
+            rows.extend(self._read_models(artifact, HistoricalModelRoute))
+        return list(HistoricalModelRouteRegistry(rows).routes())
 
     def _one(self, name: str) -> BootstrapArtifact:
         artifacts = self._many(name)

@@ -1,0 +1,52 @@
+name: bootstrap-historical-model-routes-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bootstrap-historical-model-routes-smoke.yml"
+      - "config/backtesting/fca_model_routes_v0.2.yml"
+      - "config/scoring/sector_registry_v0.6.yml"
+      - "scripts/bootstrap_historical_model_routes_smoke.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_fca_applicability_filing_ledger.py"
+      - "src/ultimate_stock_analyzer/backtesting/cvm_fca_historical_model_routes.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_model_routes.py"
+      - "src/ultimate_stock_analyzer/bootstrap/dataset.py"
+      - "src/ultimate_stock_analyzer/bootstrap/historical_model_routes.py"
+      - "tests/test_bootstrap_historical_model_routes.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Persist historical routes from one manifest-bound live FCA archive
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python scripts/bootstrap_historical_model_routes_smoke.py \
+            --output bootstrap-historical-model-routes-evidence.json
+      - name: Publish evidence
+        if: always()
+        run: |
+          if [ -f bootstrap-historical-model-routes-evidence.json ]; then
+            cat bootstrap-historical-model-routes-evidence.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bootstrap-historical-model-routes-evidence
+          path: bootstrap-historical-model-routes-evidence.json
+          if-no-files-found: error
+          retention-days: 14
