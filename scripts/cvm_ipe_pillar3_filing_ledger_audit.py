@@ -10,6 +10,9 @@ import httpx
 
 from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
     BANK_EVIDENCE_NOT_POINT_IN_TIME,
+    PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
+    PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+    PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
     PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
     PILLAR3_PDF_CONTENT_UNVALIDATED,
     PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN,
@@ -22,8 +25,8 @@ from ultimate_stock_analyzer.collectors.cvm_ipe import CVMIPECollector, parse_cv
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit the official CVM IPE filing ledger for annual Pillar 3 reports without "
-            "treating observed filings as a complete revision history."
+            "Audit the official CVM IPE filing ledger for annual Pillar 3 reports "
+            "and preserve explicit revision-completeness blockers."
         )
     )
     parser.add_argument("--cvm-code", type=int, default=19348)
@@ -48,12 +51,10 @@ def main() -> None:
     generated_at = datetime.now(UTC)
     source_years = tuple(
         range(
-            min(item.year for item in reference_dates) + 1,
+            min(item.year for item in reference_dates),
             generated_at.year + 1,
         )
     )
-    if not source_years:
-        raise SystemExit("requested reference dates do not have an observable delivery year yet")
 
     collector = CVMIPECollector()
     documents = []
@@ -94,7 +95,8 @@ def main() -> None:
     report = audit.to_dict()
     report["source_years_downloaded"] = list(source_years)
     report["warnings"] = [
-        "IPE_ROWS_ARE_OBSERVED_FILINGS_NOT_PROVEN_COMPLETE_REVISION_HISTORY",
+        "IPE_PUBLIC_VERSION_RETENTION_DOES_NOT_PROVE_OPEN_DATA_EXPORT_COMPLETENESS",
+        "CURRENT_ZIPS_ARE_NOT_IMMUTABLE_HISTORICAL_AS_OF_SNAPSHOTS",
         "DOCUMENT_AVAILABILITY_USES_DELIVERY_DATE_PLUS_ONE_DAY",
         "PILLAR3_PDF_CONTENT_IS_NOT_PARSED_IN_THIS_BLOCK",
         "NO_BANK_READINESS_CHANGE_IN_THIS_BLOCK",
@@ -102,6 +104,9 @@ def main() -> None:
 
     required = {
         BANK_EVIDENCE_NOT_POINT_IN_TIME,
+        PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
+        PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+        PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
         PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
         PILLAR3_PDF_CONTENT_UNVALIDATED,
         PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN,
