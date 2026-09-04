@@ -10,18 +10,38 @@ from ultimate_stock_analyzer.collectors.cvm_ipe import CVMIPEDocument
 
 BANK_EVIDENCE_NOT_POINT_IN_TIME = "BANK_EVIDENCE_NOT_POINT_IN_TIME"
 PILLAR3_IPE_PERIOD_FILING_NOT_FOUND = "PILLAR3_IPE_PERIOD_FILING_NOT_FOUND"
-PILLAR3_IPE_PERIOD_TOKEN_MISSING = "PILLAR3_IPE_PERIOD_TOKEN_MISSING"
-PILLAR3_IPE_PERIOD_TOKEN_AMBIGUOUS = "PILLAR3_IPE_PERIOD_TOKEN_AMBIGUOUS"
+PILLAR3_IPE_PERIOD_MARKER_MISSING = "PILLAR3_IPE_PERIOD_MARKER_MISSING"
+PILLAR3_IPE_PERIOD_MARKER_AMBIGUOUS = "PILLAR3_IPE_PERIOD_MARKER_AMBIGUOUS"
 PILLAR3_IPE_DOWNLOAD_URL_MISSING = "PILLAR3_IPE_DOWNLOAD_URL_MISSING"
 PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN = (
     "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN"
+)
+PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN = (
+    "PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN"
+)
+PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE = (
+    "PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE"
+)
+PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE = (
+    "PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE"
 )
 PILLAR3_PDF_CONTENT_UNVALIDATED = "PILLAR3_PDF_CONTENT_UNVALIDATED"
 PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN = (
     "PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN"
 )
 
-_QUARTER_TOKEN = re.compile(r"(?<![A-Z0-9])([1-4])\s*T\s*(\d{2}|\d{4})(?![A-Z0-9])")
+CVM_EMPRESAS_NET_VERSION_RETENTION_URL = (
+    "https://www.gov.br/cvm/pt-br/assuntos/noticias/2019-1/"
+    "nova-versao-do-empresasnet-moderniza-busca-por-informacoes-de-companhias-"
+    "abertas-59dc2c429727468ba15e85b54661ab5e"
+)
+CVM_IPE_ONLINE_GUIDE_URL = (
+    "https://www.gov.br/cvm/pt-br/assuntos/regulados/consultas-por-participante/"
+    "companhias/envio-de-informacoes-enet/01-ipe-online"
+)
+CVM_IPE_OPEN_DATASET_URL = "https://dados.cvm.gov.br/dataset/cia_aberta-doc-ipe"
+
+_QUARTER_MARKER = re.compile(r"(?<![A-Z0-9])([1-4])\s*T\s*(\d{2}|\d{4})(?![A-Z0-9])")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,14 +53,48 @@ class CVMIPEArchiveSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class CVMIPERevisionCompletenessFinding:
+    finding_code: str
+    status: str
+    source_url: str
+    basis: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "finding_code": self.finding_code,
+            "status": self.status,
+            "source_url": self.source_url,
+            "basis": self.basis,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CVMIPERevisionCompletenessAudit:
+    state: str
+    findings: tuple[CVMIPERevisionCompletenessFinding, ...]
+    blockers: tuple[str, ...]
+    conclusion: str
+    contract_version: str = "cvm-ipe-revision-completeness-v0.1"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "contract_version": self.contract_version,
+            "state": self.state,
+            "findings": [item.to_dict() for item in self.findings],
+            "blockers": list(self.blockers),
+            "conclusion": self.conclusion,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Pillar3FilingObservation:
-    period_token: str
+    period_marker: str
     prudential_reference_date: date
     document: CVMIPEDocument
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "period_token": self.period_token,
+            "period_marker": self.period_marker,
             "prudential_reference_date": self.prudential_reference_date.isoformat(),
             "document": self.document.to_dict(),
         }
@@ -84,6 +138,7 @@ class CVMIPEPillar3FilingLedgerAudit:
     generated_at: datetime
     requested_reference_dates: tuple[date, ...]
     source_archives: tuple[CVMIPEArchiveSnapshot, ...]
+    revision_completeness_audit: CVMIPERevisionCompletenessAudit
     issuer_document_count: int
     pillar3_candidate_count: int
     mapped_pillar3_candidate_count: int
@@ -101,7 +156,7 @@ class CVMIPEPillar3FilingLedgerAudit:
     bank_evidence_point_in_time_ready: bool = False
     readiness_promotion_allowed: bool = False
     effect: str = "diagnostic_only_cvm_ipe_pillar3_ledger_no_readiness_change"
-    schema_version: str = "0.1"
+    schema_version: str = "0.2"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -114,6 +169,7 @@ class CVMIPEPillar3FilingLedgerAudit:
                 item.isoformat() for item in self.requested_reference_dates
             ],
             "source_archives": [asdict(item) for item in self.source_archives],
+            "revision_completeness_audit": self.revision_completeness_audit.to_dict(),
             "issuer_document_count": self.issuer_document_count,
             "pillar3_candidate_count": self.pillar3_candidate_count,
             "mapped_pillar3_candidate_count": self.mapped_pillar3_candidate_count,
@@ -161,6 +217,8 @@ def audit_cvm_ipe_pillar3_filing_ledger(
     if any(not _valid_archive_snapshot(item) for item in normalized_archives):
         raise ValueError("source archive provenance must include SHA-256 and positive size")
 
+    revision_completeness_audit = _revision_completeness_audit()
+
     company_id = f"cvm:{cvm_code}"
     issuer_documents = tuple(
         sorted(
@@ -168,23 +226,25 @@ def audit_cvm_ipe_pillar3_filing_ledger(
             key=_document_sort_key,
         )
     )
-    candidates = tuple(document for document in issuer_documents if _is_pillar3_candidate(document))
+    candidates = tuple(
+        document for document in issuer_documents if _is_pillar3_candidate(document)
+    )
 
     mapped: list[Pillar3FilingObservation] = []
-    missing_token_count = 0
-    ambiguous_token_count = 0
+    missing_marker_count = 0
+    ambiguous_marker_count = 0
     for document in candidates:
         parsed = _prudential_period_from_document(document)
         if parsed is None:
-            missing_token_count += 1
+            missing_marker_count += 1
             continue
         if len(parsed) != 1:
-            ambiguous_token_count += 1
+            ambiguous_marker_count += 1
             continue
-        period_token, reference_date = parsed[0]
+        period_marker, reference_date = parsed[0]
         mapped.append(
             Pillar3FilingObservation(
-                period_token=period_token,
+                period_marker=period_marker,
                 prudential_reference_date=reference_date,
                 document=document,
             )
@@ -205,14 +265,14 @@ def audit_cvm_ipe_pillar3_filing_ledger(
 
     blockers = {
         BANK_EVIDENCE_NOT_POINT_IN_TIME,
-        PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
+        *revision_completeness_audit.blockers,
         PILLAR3_PDF_CONTENT_UNVALIDATED,
         PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN,
     }
-    if missing_token_count:
-        blockers.add(PILLAR3_IPE_PERIOD_TOKEN_MISSING)
-    if ambiguous_token_count:
-        blockers.add(PILLAR3_IPE_PERIOD_TOKEN_AMBIGUOUS)
+    if missing_marker_count:
+        blockers.add(PILLAR3_IPE_PERIOD_MARKER_MISSING)
+    if ambiguous_marker_count:
+        blockers.add(PILLAR3_IPE_PERIOD_MARKER_AMBIGUOUS)
 
     timelines: list[Pillar3PeriodTimeline] = []
     for reference_date in requested_dates:
@@ -258,7 +318,8 @@ def audit_cvm_ipe_pillar3_filing_ledger(
     timeline_available = (
         covered_count == len(requested_dates)
         and all(
-            item.document.delivery_protocol is not None and item.document.download_url is not None
+            item.document.delivery_protocol is not None
+            and item.document.download_url is not None
             for timeline in timeline_tuple
             for item in timeline.filings
         )
@@ -269,16 +330,92 @@ def audit_cvm_ipe_pillar3_filing_ledger(
         generated_at=generated_at,
         requested_reference_dates=requested_dates,
         source_archives=normalized_archives,
+        revision_completeness_audit=revision_completeness_audit,
         issuer_document_count=len(issuer_documents),
         pillar3_candidate_count=len(candidates),
         mapped_pillar3_candidate_count=len(mapped_observations),
-        unmapped_pillar3_candidate_count=missing_token_count + ambiguous_token_count,
+        unmapped_pillar3_candidate_count=missing_marker_count + ambiguous_marker_count,
         covered_reference_period_count=covered_count,
         periods_with_multiple_observed_filings=multiple_count,
         timelines=timeline_tuple,
         blockers=tuple(sorted(blockers)),
         observed_filing_timeline_available=timeline_available,
         multiple_observed_filings_present=multiple_count > 0,
+    )
+
+
+def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
+    findings = (
+        CVMIPERevisionCompletenessFinding(
+            finding_code="PUBLIC_VERSION_RETENTION_DOCUMENTED",
+            status="DOCUMENTED",
+            source_url=CVM_EMPRESAS_NET_VERSION_RETENTION_URL,
+            basis=(
+                "CVM documents that all versions of non-structured documents are "
+                "publicly retained rather than exposing only the latest replacement."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="REAPRESENTED_AND_CANCELLED_DOCUMENTS_REMAIN_VISIBLE",
+            status="DOCUMENTED",
+            source_url=CVM_IPE_ONLINE_GUIDE_URL,
+            basis=(
+                "CVM documents re-presentation as the correction/complement lifecycle "
+                "and states that re-presented or cancelled documents remain visible."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="OPEN_DATA_ARCHIVE_UPDATE_CONTRACT",
+            status="DOCUMENTED",
+            source_url=CVM_IPE_OPEN_DATASET_URL,
+            basis=(
+                "The open-data catalog groups rows by delivery year and documents "
+                "weekly updates for the current and previous year with re-presentations."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="OPEN_DATA_EXPORT_ALL_VERSION_COMPLETENESS",
+            status="NOT_DOCUMENTED_IN_AUDITED_SOURCE",
+            source_url=CVM_IPE_OPEN_DATASET_URL,
+            basis=(
+                "The audited open-data catalog does not state that each ZIP snapshot "
+                "is an exhaustive all-version export for a historical cutoff."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="HISTORICAL_AS_OF_SNAPSHOT_CONTRACT",
+            status="NOT_DOCUMENTED_IN_AUDITED_SOURCE",
+            source_url=CVM_IPE_OPEN_DATASET_URL,
+            basis=(
+                "The audited catalog publishes current annual ZIPs, not immutable "
+                "snapshots proving exactly what the export contained at a past as_of."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="EXACT_DELIVERY_TIMESTAMP_IN_PARSED_EXPORT",
+            status="NOT_AVAILABLE_IN_PARSED_CONTRACT",
+            source_url=CVM_IPE_OPEN_DATASET_URL,
+            basis=(
+                "The repository's open-data parser receives Data_Entrega as a date; "
+                "it does not receive the delivery time shown by the IPE Online interface."
+            ),
+        ),
+    )
+    blockers = (
+        PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
+        PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+        PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
+        PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
+    )
+    return CVMIPERevisionCompletenessAudit(
+        state="UNKNOWN",
+        findings=findings,
+        blockers=blockers,
+        conclusion=(
+            "Official CVM sources document public retention and the re-presentation "
+            "lifecycle, but the audited open-data export contract is insufficient to "
+            "prove complete revision history at an arbitrary historical as_of."
+        ),
     )
 
 
@@ -309,7 +446,7 @@ def _prudential_period_from_document(
     if document.subject is None:
         return None
     normalized = _normalize(document.subject)
-    matches = _QUARTER_TOKEN.findall(normalized)
+    matches = _QUARTER_MARKER.findall(normalized)
     if not matches:
         return None
     parsed: list[tuple[str, date]] = []

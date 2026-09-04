@@ -3,9 +3,12 @@ from datetime import UTC, date, datetime
 from ultimate_stock_analyzer.backtesting.cvm_ipe_pillar3_filing_ledger import (
     BANK_EVIDENCE_NOT_POINT_IN_TIME,
     PILLAR3_IPE_DOWNLOAD_URL_MISSING,
+    PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
+    PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+    PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
     PILLAR3_IPE_PERIOD_FILING_NOT_FOUND,
-    PILLAR3_IPE_PERIOD_TOKEN_AMBIGUOUS,
-    PILLAR3_IPE_PERIOD_TOKEN_MISSING,
+    PILLAR3_IPE_PERIOD_MARKER_AMBIGUOUS,
+    PILLAR3_IPE_PERIOD_MARKER_MISSING,
     PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
     PILLAR3_PDF_CONTENT_UNVALIDATED,
     PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN,
@@ -61,7 +64,7 @@ def _audit(documents: list[CVMIPEDocument], dates: list[date]):
     return audit_cvm_ipe_pillar3_filing_ledger(
         cvm_code=19348,
         documents=documents,
-        source_archives=[_snapshot(2025), _snapshot(2026)],
+        source_archives=[_snapshot(2024), _snapshot(2025), _snapshot(2026)],
         requested_reference_dates=dates,
         generated_at=datetime(2026, 9, 2, tzinfo=UTC),
     )
@@ -81,7 +84,7 @@ def test_filters_issuer_and_maps_annual_pillar3_period() -> None:
     assert audit.pillar3_candidate_count == 2
     assert audit.mapped_pillar3_candidate_count == 1
     assert audit.covered_reference_period_count == 1
-    assert audit.timelines[0].filings[0].period_token == "4T24"
+    assert audit.timelines[0].filings[0].period_marker == "4T24"
     assert audit.timelines[0].prudential_reference_date == date(2024, 12, 31)
 
 
@@ -112,7 +115,7 @@ def test_preserves_multiple_filings_in_delivery_order() -> None:
     assert audit.multiple_observed_filings_present
 
 
-def test_missing_period_download_and_period_tokens_fail_closed() -> None:
+def test_missing_period_download_and_period_markers_fail_closed() -> None:
     audit = _audit(
         [
             _document(subject="Relatório de Pilar 3 sem trimestre"),
@@ -122,11 +125,39 @@ def test_missing_period_download_and_period_tokens_fail_closed() -> None:
         [date(2024, 12, 31), date(2025, 12, 31)],
     )
 
-    assert PILLAR3_IPE_PERIOD_TOKEN_MISSING in audit.blockers
-    assert PILLAR3_IPE_PERIOD_TOKEN_AMBIGUOUS in audit.blockers
+    assert PILLAR3_IPE_PERIOD_MARKER_MISSING in audit.blockers
+    assert PILLAR3_IPE_PERIOD_MARKER_AMBIGUOUS in audit.blockers
     assert PILLAR3_IPE_DOWNLOAD_URL_MISSING in audit.blockers
     assert PILLAR3_IPE_PERIOD_FILING_NOT_FOUND in audit.blockers
     assert not audit.observed_filing_timeline_available
+
+
+def test_revision_completeness_audit_records_documented_and_missing_contracts() -> None:
+    audit = _audit([_document()], [date(2024, 12, 31)])
+
+    proof = audit.revision_completeness_audit
+    statuses = {item.finding_code: item.status for item in proof.findings}
+
+    assert proof.state == "UNKNOWN"
+    assert statuses["PUBLIC_VERSION_RETENTION_DOCUMENTED"] == "DOCUMENTED"
+    assert (
+        statuses["REAPRESENTED_AND_CANCELLED_DOCUMENTS_REMAIN_VISIBLE"]
+        == "DOCUMENTED"
+    )
+    assert statuses["OPEN_DATA_ARCHIVE_UPDATE_CONTRACT"] == "DOCUMENTED"
+    assert (
+        statuses["OPEN_DATA_EXPORT_ALL_VERSION_COMPLETENESS"]
+        == "NOT_DOCUMENTED_IN_AUDITED_SOURCE"
+    )
+    assert (
+        statuses["HISTORICAL_AS_OF_SNAPSHOT_CONTRACT"]
+        == "NOT_DOCUMENTED_IN_AUDITED_SOURCE"
+    )
+    assert (
+        statuses["EXACT_DELIVERY_TIMESTAMP_IN_PARSED_EXPORT"]
+        == "NOT_AVAILABLE_IN_PARSED_CONTRACT"
+    )
+    assert not audit.revision_history_completeness_proven
 
 
 def test_diagnostic_never_promotes_bank_readiness() -> None:
@@ -134,6 +165,9 @@ def test_diagnostic_never_promotes_bank_readiness() -> None:
 
     required = {
         BANK_EVIDENCE_NOT_POINT_IN_TIME,
+        PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
+        PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+        PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
         PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
         PILLAR3_PDF_CONTENT_UNVALIDATED,
         PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN,
