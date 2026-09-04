@@ -96,15 +96,38 @@ class SectorModelRegistry:
     @classmethod
     def from_yaml(cls, path: str | Path) -> SectorModelRegistry:
         registry_path = Path(path)
-        with registry_path.open("r", encoding="utf-8") as file:
-            raw = yaml.safe_load(file)
+        return cls.from_yaml_bytes(
+            registry_path.read_bytes(),
+            base_dir=registry_path.parent,
+        )
 
-        base_dir = registry_path.parent
+    @classmethod
+    def from_yaml_bytes(
+        cls,
+        content: bytes,
+        *,
+        base_dir: str | Path,
+    ) -> SectorModelRegistry:
+        try:
+            decoded = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("sector model registry must be UTF-8") from exc
+        raw = yaml.safe_load(decoded)
+        if not isinstance(raw, dict):
+            raise TypeError("sector model registry YAML must contain an object")
+
+        resolved_base_dir = Path(base_dir)
         default_raw = raw["default_model"]
-        default_model = _definition_from_raw(default_raw, base_dir)
+        if not isinstance(default_raw, dict):
+            raise TypeError("sector model registry default_model must contain an object")
+        default_model = _definition_from_raw(default_raw, resolved_base_dir)
+
+        models_raw = raw.get("models", [])
+        if not isinstance(models_raw, list):
+            raise TypeError("sector model registry models must contain a list")
         models = tuple(
-            _definition_from_raw(model_raw, base_dir)
-            for model_raw in raw.get("models", [])
+            _definition_from_raw(model_raw, resolved_base_dir)
+            for model_raw in models_raw
         )
         return cls(
             version=str(raw["version"]),

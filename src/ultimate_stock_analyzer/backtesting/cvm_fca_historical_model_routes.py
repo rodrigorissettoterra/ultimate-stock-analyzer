@@ -89,14 +89,29 @@ class FCAHistoricalModelRouteMapping(BaseModel):
     @classmethod
     def from_yaml(cls, path: str | Path) -> FCAHistoricalModelRouteMapping:
         source_path = Path(path)
-        raw = source_path.read_bytes()
-        payload = yaml.safe_load(raw.decode("utf-8"))
+        return cls.from_yaml_bytes(
+            source_path.read_bytes(),
+            source_document=source_path.as_posix(),
+        )
+
+    @classmethod
+    def from_yaml_bytes(
+        cls,
+        content: bytes,
+        *,
+        source_document: str,
+    ) -> FCAHistoricalModelRouteMapping:
+        try:
+            decoded = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("FCA model-route mapping must be UTF-8") from exc
+        payload = yaml.safe_load(decoded)
         if not isinstance(payload, dict):
             raise TypeError("FCA model-route mapping YAML must contain an object")
         return cls(
             **payload,
-            source_sha256=hashlib.sha256(raw).hexdigest(),
-            source_document=source_path.as_posix(),
+            source_sha256=hashlib.sha256(content).hexdigest(),
+            source_document=source_document,
         )
 
     def rule_for_sector(self, sector_activity: str) -> FCAModelRouteRule | None:
