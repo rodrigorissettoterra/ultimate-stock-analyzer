@@ -1,0 +1,114 @@
+name: bcb-pillar3-dasfn-payload-provenance-audit-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bcb-pillar3-dasfn-payload-provenance-audit-smoke.yml"
+      - "scripts/bcb_pillar3_dasfn_payload_provenance_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/bcb_pillar3_dasfn_payload_provenance_audit.py"
+      - "src/ultimate_stock_analyzer/backtesting/bcb_pillar3_dasfn_catalog_snapshot_audit.py"
+      - "tests/test_bcb_pillar3_dasfn_payload_provenance_audit.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Run bounded DASFN institution payload provenance audit
+        run: |
+          python scripts/bcb_pillar3_dasfn_payload_provenance_audit.py \
+            --catalog-top 500 \
+            --catalog-max-pages 100 \
+            --max-body-bytes 2000000 \
+            --output bcb-pillar3-dasfn-payload-provenance-audit.json
+      - name: Validate fail-closed diagnostic boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          report = json.loads(
+              Path("bcb-pillar3-dasfn-payload-provenance-audit.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if report["schema_version"] != "0.1":
+              raise SystemExit("unexpected payload provenance schema")
+          if report["effect"] != "diagnostic_only_pillar3_payload_provenance_no_readiness_change":
+              raise SystemExit("unexpected payload provenance effect")
+
+          policy = report["sample_policy"]
+          expected_cnpjs = [
+              "00000000000191",
+              "60701190000104",
+              "60746948000112",
+              "90400888000142",
+          ]
+          if policy["target_cnpjs"] != expected_cnpjs:
+              raise SystemExit("unexpected deterministic institution sample")
+          if policy["reference_years"] != [2022, 2025]:
+              raise SystemExit("unexpected reference-year sample")
+          if policy["resource"] != "KM1 year-end quarter":
+              raise SystemExit("unexpected Pillar 3 resource sample")
+          if policy["payload_redirects_followed"]:
+              raise SystemExit("institution payload redirects must never be followed")
+
+          expected = report["expected_samples"]
+          if len(expected) != 8:
+              raise SystemExit("expected exactly eight institution-year samples")
+          payloads = report["payloads"]
+          if len(payloads) > len(expected):
+              raise SystemExit("payload evidence exceeds deterministic sample")
+
+          allowed = policy["allowed_hosts"]
+          for payload in payloads:
+              cnpj = payload["cnpj_instituicao"]
+              host = (urlparse(payload["central_url_dados"]).hostname or "").lower()
+              if allowed.get(cnpj) != host:
+                  raise SystemExit("payload URL escaped deterministic host allowlist")
+
+          required = {
+              "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_DASFN_PAYLOAD_PUBLICATION_TIMESTAMP_UNPROVEN",
+              "PILLAR3_DASFN_REVISION_HISTORY_UNPROVEN",
+              "PILLAR3_DASFN_HISTORICAL_VINTAGE_QUERY_UNPROVEN",
+          }
+          if not required.issubset(report["blockers"]):
+              raise SystemExit("required PIT blockers disappeared")
+          for key in (
+              "payload_publication_timestamp_proven",
+              "revision_history_proven",
+              "historical_vintage_query_proven",
+              "historical_replay_ready",
+              "bank_evidence_point_in_time_ready",
+              "readiness_promotion_allowed",
+          ):
+              if report[key]:
+                  raise SystemExit(f"diagnostic audit must keep {key}=false")
+          PY
+      - name: Publish audit evidence
+        if: always()
+        run: |
+          if [ -f bcb-pillar3-dasfn-payload-provenance-audit.json ]; then
+            cat bcb-pillar3-dasfn-payload-provenance-audit.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bcb-pillar3-dasfn-payload-provenance-evidence
+          path: bcb-pillar3-dasfn-payload-provenance-audit.json
+          if-no-files-found: error
+          retention-days: 14
