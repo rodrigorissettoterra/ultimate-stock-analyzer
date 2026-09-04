@@ -25,6 +25,9 @@ PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE = (
 PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE = (
     "PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE"
 )
+PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE = (
+    "PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE"
+)
 PILLAR3_PDF_CONTENT_UNVALIDATED = "PILLAR3_PDF_CONTENT_UNVALIDATED"
 PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN = (
     "PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN"
@@ -42,6 +45,7 @@ CVM_IPE_ONLINE_GUIDE_URL = (
 CVM_IPE_OPEN_DATASET_URL = "https://dados.cvm.gov.br/dataset/cia_aberta-doc-ipe"
 
 _QUARTER_MARKER = re.compile(r"(?<![A-Z0-9])([1-4])\s*T\s*(\d{2}|\d{4})(?![A-Z0-9])")
+_STATUS_COLUMN_NAMES = frozenset({"STATUS", "SITUACAO"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +54,7 @@ class CVMIPEArchiveSnapshot:
     source_url: str
     sha256: str
     size_bytes: int
+    columns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +79,7 @@ class CVMIPERevisionCompletenessAudit:
     findings: tuple[CVMIPERevisionCompletenessFinding, ...]
     blockers: tuple[str, ...]
     conclusion: str
-    contract_version: str = "cvm-ipe-revision-completeness-v0.1"
+    contract_version: str = "cvm-ipe-revision-completeness-v0.2"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -156,7 +161,7 @@ class CVMIPEPillar3FilingLedgerAudit:
     bank_evidence_point_in_time_ready: bool = False
     readiness_promotion_allowed: bool = False
     effect: str = "diagnostic_only_cvm_ipe_pillar3_ledger_no_readiness_change"
-    schema_version: str = "0.2"
+    schema_version: str = "0.3"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -182,7 +187,9 @@ class CVMIPEPillar3FilingLedgerAudit:
             "blockers": list(self.blockers),
             "observed_filing_timeline_available": self.observed_filing_timeline_available,
             "multiple_observed_filings_present": self.multiple_observed_filings_present,
-            "revision_history_completeness_proven": self.revision_history_completeness_proven,
+            "revision_history_completeness_proven": (
+                self.revision_history_completeness_proven
+            ),
             "pdf_content_validated": self.pdf_content_validated,
             "prudential_metric_coverage_proven": self.prudential_metric_coverage_proven,
             "historical_prudential_source_ready": self.historical_prudential_source_ready,
@@ -212,12 +219,14 @@ def audit_cvm_ipe_pillar3_filing_ledger(
     normalized_archives = tuple(sorted(source_archives, key=lambda item: item.source_year))
     if not normalized_archives:
         raise ValueError("source_archives must not be empty")
-    if len({item.source_year for item in normalized_archives}) != len(normalized_archives):
+    if len({item.source_year for item in normalized_archives}) != len(
+        normalized_archives
+    ):
         raise ValueError("source_archives must contain at most one snapshot per source year")
     if any(not _valid_archive_snapshot(item) for item in normalized_archives):
         raise ValueError("source archive provenance must include SHA-256 and positive size")
 
-    revision_completeness_audit = _revision_completeness_audit()
+    revision_completeness_audit = _revision_completeness_audit(normalized_archives)
 
     company_id = f"cvm:{cvm_code}"
     issuer_documents = tuple(
@@ -261,7 +270,9 @@ def audit_cvm_ipe_pillar3_filing_ledger(
     )
     by_period: dict[date, list[Pillar3FilingObservation]] = {}
     for observation in mapped_observations:
-        by_period.setdefault(observation.prudential_reference_date, []).append(observation)
+        by_period.setdefault(observation.prudential_reference_date, []).append(
+            observation
+        )
 
     blockers = {
         BANK_EVIDENCE_NOT_POINT_IN_TIME,
@@ -344,15 +355,40 @@ def audit_cvm_ipe_pillar3_filing_ledger(
     )
 
 
-def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
+def _revision_completeness_audit(
+    source_archives: tuple[CVMIPEArchiveSnapshot, ...],
+) -> CVMIPERevisionCompletenessAudit:
+    schema_observed = all(bool(item.columns) for item in source_archives)
+    status_in_all_archives = schema_observed and all(
+        _archive_has_status_column(item) for item in source_archives
+    )
+    if not schema_observed:
+        status_field_state = "UNKNOWN_SCHEMA_NOT_OBSERVED"
+        status_field_basis = (
+            "One or more archive snapshots lack a captured raw CSV header, so status "
+            "field availability cannot be established from the observed export."
+        )
+    elif status_in_all_archives:
+        status_field_state = "OBSERVED_IN_ALL_ARCHIVES"
+        status_field_basis = (
+            "A Status/Situacao-equivalent column was observed in every captured raw "
+            "CVM IPE archive header."
+        )
+    else:
+        status_field_state = "NOT_OBSERVED_IN_ALL_ARCHIVES"
+        status_field_basis = (
+            "At least one captured raw CVM IPE archive header has no Status or "
+            "Situacao-equivalent column."
+        )
+
     findings = (
         CVMIPERevisionCompletenessFinding(
             finding_code="PUBLIC_VERSION_RETENTION_DOCUMENTED",
             status="DOCUMENTED",
             source_url=CVM_EMPRESAS_NET_VERSION_RETENTION_URL,
             basis=(
-                "CVM documents that all versions of non-structured documents are "
-                "publicly retained rather than exposing only the latest replacement."
+                "CVM documents that versions of non-structured documents are publicly "
+                "retained rather than exposing only the latest replacement."
             ),
         ),
         CVMIPERevisionCompletenessFinding(
@@ -360,8 +396,17 @@ def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
             status="DOCUMENTED",
             source_url=CVM_IPE_ONLINE_GUIDE_URL,
             basis=(
-                "CVM documents re-presentation as the correction/complement lifecycle "
-                "and states that re-presented or cancelled documents remain visible."
+                "CVM documents re-presentation/cancellation and states that affected "
+                "documents remain visible with Inativo or Cancelado status."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="PUBLIC_QUERY_VISIBILITY_CAN_BE_INHIBITED",
+            status="DOCUMENTED",
+            source_url=CVM_IPE_ONLINE_GUIDE_URL,
+            basis=(
+                "The current CVM guide states that a company may request CVM evaluation "
+                "to inhibit visualization of a document."
             ),
         ),
         CVMIPERevisionCompletenessFinding(
@@ -370,16 +415,31 @@ def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
             source_url=CVM_IPE_OPEN_DATASET_URL,
             basis=(
                 "The open-data catalog groups rows by delivery year and documents "
-                "weekly updates for the current and previous year with re-presentations."
+                "updates for recent annual archives with re-presentations."
             ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="OPEN_DATA_RAW_SCHEMA_CAPTURE",
+            status="OBSERVED" if schema_observed else "INCOMPLETE",
+            source_url=CVM_IPE_OPEN_DATASET_URL,
+            basis=(
+                "The audit artifact stores the exact ordered CSV header observed in "
+                "each downloaded official annual ZIP."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="OPEN_DATA_STATUS_FIELD",
+            status=status_field_state,
+            source_url=CVM_IPE_OPEN_DATASET_URL,
+            basis=status_field_basis,
         ),
         CVMIPERevisionCompletenessFinding(
             finding_code="OPEN_DATA_EXPORT_ALL_VERSION_COMPLETENESS",
             status="NOT_DOCUMENTED_IN_AUDITED_SOURCE",
             source_url=CVM_IPE_OPEN_DATASET_URL,
             basis=(
-                "The audited open-data catalog does not state that each ZIP snapshot "
-                "is an exhaustive all-version export for a historical cutoff."
+                "The audited open-data catalog does not state that each current ZIP "
+                "snapshot is an exhaustive all-version export for a historical cutoff."
             ),
         ),
         CVMIPERevisionCompletenessFinding(
@@ -387,8 +447,8 @@ def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
             status="NOT_DOCUMENTED_IN_AUDITED_SOURCE",
             source_url=CVM_IPE_OPEN_DATASET_URL,
             basis=(
-                "The audited catalog publishes current annual ZIPs, not immutable "
-                "snapshots proving exactly what the export contained at a past as_of."
+                "The catalog publishes mutable annual ZIP resources, not immutable "
+                "snapshots proving exactly what was visible at a past as_of."
             ),
         ),
         CVMIPERevisionCompletenessFinding(
@@ -396,14 +456,25 @@ def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
             status="NOT_AVAILABLE_IN_PARSED_CONTRACT",
             source_url=CVM_IPE_OPEN_DATASET_URL,
             basis=(
-                "The repository's open-data parser receives Data_Entrega as a date; "
-                "it does not receive the delivery time shown by the IPE Online interface."
+                "The project parses Data_Entrega from the open-data export as a date; "
+                "it does not receive the exact delivery time exposed by ENET surfaces."
+            ),
+        ),
+        CVMIPERevisionCompletenessFinding(
+            finding_code="HISTORICAL_STATUS_AT_ARBITRARY_AS_OF",
+            status="UNPROVEN",
+            source_url=CVM_IPE_ONLINE_GUIDE_URL,
+            basis=(
+                "Current public status cannot prove immutable historical status because "
+                "document visualization can later be inhibited and no immutable as_of "
+                "snapshot contract has been established."
             ),
         ),
     )
     blockers = (
         PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE,
         PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE,
+        PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE,
         PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN,
         PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN,
     )
@@ -412,9 +483,10 @@ def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
         findings=findings,
         blockers=blockers,
         conclusion=(
-            "Official CVM sources document public retention and the re-presentation "
-            "lifecycle, but the audited open-data export contract is insufficient to "
-            "prove complete revision history at an arbitrary historical as_of."
+            "Official CVM sources document version retention and current status "
+            "visibility, but raw open-data schema plus mutable public visibility remain "
+            "insufficient to reconstruct complete status/revision history at an "
+            "arbitrary historical as_of."
         ),
     )
 
@@ -422,7 +494,15 @@ def _revision_completeness_audit() -> CVMIPERevisionCompletenessAudit:
 def _valid_archive_snapshot(snapshot: CVMIPEArchiveSnapshot) -> bool:
     if snapshot.size_bytes <= 0 or len(snapshot.sha256) != 64:
         return False
-    return all(character in "0123456789abcdefABCDEF" for character in snapshot.sha256)
+    if not all(character in "0123456789abcdefABCDEF" for character in snapshot.sha256):
+        return False
+    return len(set(snapshot.columns)) == len(snapshot.columns) and all(
+        bool(column.strip()) for column in snapshot.columns
+    )
+
+
+def _archive_has_status_column(snapshot: CVMIPEArchiveSnapshot) -> bool:
+    return any(_normalize(column) in _STATUS_COLUMN_NAMES for column in snapshot.columns)
 
 
 def _is_pillar3_candidate(document: CVMIPEDocument) -> bool:

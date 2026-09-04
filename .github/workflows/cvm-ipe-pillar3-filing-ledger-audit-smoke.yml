@@ -8,6 +8,7 @@ on:
       - "scripts/cvm_ipe_pillar3_filing_ledger_audit.py"
       - "src/ultimate_stock_analyzer/backtesting/cvm_ipe_pillar3_filing_ledger.py"
       - "src/ultimate_stock_analyzer/collectors/cvm_ipe.py"
+      - "tests/test_cvm_ipe_schema.py"
 
 permissions:
   contents: read
@@ -38,6 +39,8 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import re
+          import unicodedata
           from pathlib import Path
 
           report = json.loads(
@@ -58,10 +61,45 @@ jobs:
           if not report["observed_filing_timeline_available"]:
               raise SystemExit("requested filing timelines lack protocol/download evidence")
           if len(report["source_archives"]) < 2:
-              raise SystemExit("expected 2025 and 2026 CVM IPE archive snapshots")
+              raise SystemExit("expected multiple CVM IPE archive snapshots")
           for archive in report["source_archives"]:
               if len(archive["sha256"]) != 64 or archive["size_bytes"] <= 0:
                   raise SystemExit("CVM IPE archive provenance is incomplete")
+              if not archive["columns"]:
+                  raise SystemExit("CVM IPE raw archive schema was not captured")
+
+          def normalize_column(value: str) -> str:
+              decomposed = unicodedata.normalize("NFKD", value)
+              ascii_value = "".join(
+                  character
+                  for character in decomposed
+                  if not unicodedata.combining(character)
+              )
+              return re.sub(r"[^A-Z0-9]+", " ", ascii_value.upper()).strip()
+
+          status_in_all_archives = all(
+              any(
+                  normalize_column(column) in {"STATUS", "SITUACAO"}
+                  for column in archive["columns"]
+              )
+              for archive in report["source_archives"]
+          )
+          findings = {
+              item["finding_code"]: item["status"]
+              for item in report["revision_completeness_audit"]["findings"]
+          }
+          expected_status_state = (
+              "OBSERVED_IN_ALL_ARCHIVES"
+              if status_in_all_archives
+              else "NOT_OBSERVED_IN_ALL_ARCHIVES"
+          )
+          if findings["OPEN_DATA_STATUS_FIELD"] != expected_status_state:
+              raise SystemExit("status-field finding disagrees with captured raw headers")
+          if findings["PUBLIC_QUERY_VISIBILITY_CAN_BE_INHIBITED"] != "DOCUMENTED":
+              raise SystemExit("public-query visibility limitation is not preserved")
+          if findings["HISTORICAL_STATUS_AT_ARBITRARY_AS_OF"] != "UNPROVEN":
+              raise SystemExit("historical status was promoted without immutable evidence")
+
           expected_dates = {"2024-12-31", "2025-12-31"}
           timelines = {
               item["prudential_reference_date"]: item for item in report["timelines"]
@@ -82,6 +120,10 @@ jobs:
                       raise SystemExit("observed filing lacks official RAD URL")
           required = {
               "BANK_EVIDENCE_NOT_POINT_IN_TIME",
+              "PILLAR3_IPE_EXACT_DELIVERY_TIMESTAMP_UNAVAILABLE",
+              "PILLAR3_IPE_HISTORICAL_SNAPSHOT_UNAVAILABLE",
+              "PILLAR3_IPE_HISTORICAL_STATUS_UNAVAILABLE",
+              "PILLAR3_IPE_OPEN_DATA_EXPORT_COMPLETENESS_UNPROVEN",
               "PILLAR3_IPE_REVISION_HISTORY_COMPLETENESS_UNPROVEN",
               "PILLAR3_PDF_CONTENT_UNVALIDATED",
               "PILLAR3_PRUDENTIAL_METRIC_COVERAGE_UNPROVEN",
