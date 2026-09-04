@@ -76,11 +76,26 @@ class CVMIPECollector:
         url = self.dataset_url(year)
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.hostname != "dados.cvm.gov.br":
-            raise ValueError("CVM IPE collector only accepts official dados.cvm.gov.br HTTPS URLs")
+            raise ValueError(
+                "CVM IPE collector only accepts official dados.cvm.gov.br HTTPS URLs"
+            )
         with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True) as client:
             response = client.get(url, headers={"User-Agent": self.user_agent})
             response.raise_for_status()
         return parse_cvm_ipe_zip(response.content, year=year, cvm_codes=cvm_codes)
+
+
+def inspect_cvm_ipe_zip_columns(content: bytes) -> tuple[str, ...]:
+    """Return and validate the exact ordered CSV header from one CVM IPE ZIP."""
+
+    text = _decode_cvm(_read_single_cvm_ipe_csv(content))
+    reader = csv.reader(io.StringIO(text), delimiter=";")
+    try:
+        columns = tuple(next(reader))
+    except StopIteration as error:
+        raise ValueError("CVM IPE CSV is empty") from error
+    _validate_cvm_ipe_columns(columns)
+    return columns
 
 
 def parse_cvm_ipe_zip(
@@ -93,20 +108,13 @@ def parse_cvm_ipe_zip(
         raise ValueError("CVM IPE annual history starts in 2003")
     normalized_codes = None
     if cvm_codes is not None:
-        normalized_codes = frozenset(_positive_int(value, "cvm_codes") for value in cvm_codes)
+        normalized_codes = frozenset(
+            _positive_int(value, "cvm_codes") for value in cvm_codes
+        )
 
-    with zipfile.ZipFile(io.BytesIO(content)) as archive:
-        members = [name for name in archive.namelist() if name.lower().endswith(".csv")]
-        if len(members) != 1:
-            raise ValueError(f"expected exactly one CVM IPE CSV, found {len(members)}")
-        raw = archive.read(members[0])
-
-    text = _decode_cvm(raw)
+    text = _decode_cvm(_read_single_cvm_ipe_csv(content))
     reader = csv.DictReader(io.StringIO(text), delimiter=";")
-    columns = frozenset(reader.fieldnames or ())
-    missing = sorted(CVM_IPE_REQUIRED_COLUMNS - columns)
-    if missing:
-        raise ValueError(f"CVM IPE schema missing required columns: {missing}")
+    _validate_cvm_ipe_columns(tuple(reader.fieldnames or ()))
 
     documents: list[CVMIPEDocument] = []
     for row_number, row in enumerate(reader, start=2):
@@ -119,17 +127,25 @@ def parse_cvm_ipe_zip(
             cvm_code = _positive_int(code_text, "Codigo_CVM")
         except ValueError:
             if normalized_codes is None:
-                raise ValueError(f"CVM IPE row {row_number} has invalid Codigo_CVM") from None
+                raise ValueError(
+                    f"CVM IPE row {row_number} has invalid Codigo_CVM"
+                ) from None
             continue
         if normalized_codes is not None and cvm_code not in normalized_codes:
             continue
         try:
-            reference_date = _required_date(row.get("Data_Referencia"), "Data_Referencia")
+            reference_date = _required_date(
+                row.get("Data_Referencia"), "Data_Referencia"
+            )
             delivered_on = _required_date(row.get("Data_Entrega"), "Data_Entrega")
-            company_name = _required_text(row.get("Nome_Companhia"), "Nome_Companhia")
+            company_name = _required_text(
+                row.get("Nome_Companhia"), "Nome_Companhia"
+            )
             category = _required_text(row.get("Categoria"), "Categoria")
         except ValueError as error:
-            raise ValueError(f"invalid CVM IPE target row {row_number}: {error}") from error
+            raise ValueError(
+                f"invalid CVM IPE target row {row_number}: {error}"
+            ) from error
 
         documents.append(
             CVMIPEDocument(
@@ -147,7 +163,9 @@ def parse_cvm_ipe_zip(
                 presentation_type=_optional_text(row.get("Tipo_Apresentacao")),
                 delivery_protocol=_optional_text(row.get("Protocolo_Entrega")),
                 version=_optional_positive_int(row.get("Versao")),
-                download_url=_optional_official_download_url(row.get("Link_Download")),
+                download_url=_optional_official_download_url(
+                    row.get("Link_Download")
+                ),
                 source_year=year,
             )
         )
@@ -164,6 +182,31 @@ def parse_cvm_ipe_zip(
             ),
         )
     )
+
+
+def _read_single_cvm_ipe_csv(content: bytes) -> bytes:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            members = [
+                name for name in archive.namelist() if name.lower().endswith(".csv")
+            ]
+            if len(members) != 1:
+                raise ValueError(
+                    f"expected exactly one CVM IPE CSV, found {len(members)}"
+                )
+            return archive.read(members[0])
+    except zipfile.BadZipFile as error:
+        raise ValueError("invalid CVM IPE ZIP archive") from error
+
+
+def _validate_cvm_ipe_columns(columns: tuple[str, ...]) -> None:
+    if not columns or any(not column.strip() for column in columns):
+        raise ValueError("CVM IPE CSV header must contain non-blank columns")
+    if len(set(columns)) != len(columns):
+        raise ValueError("CVM IPE CSV header contains duplicate columns")
+    missing = sorted(CVM_IPE_REQUIRED_COLUMNS - frozenset(columns))
+    if missing:
+        raise ValueError(f"CVM IPE schema missing required columns: {missing}")
 
 
 def _conservative_availability(delivered_on: date) -> datetime:
@@ -215,7 +258,10 @@ def _optional_official_download_url(value: Any) -> str | None:
     if text is None:
         return None
     parsed = urlparse(text)
-    if parsed.scheme != "https" or parsed.hostname not in {"www.rad.cvm.gov.br", "rad.cvm.gov.br"}:
+    if parsed.scheme != "https" or parsed.hostname not in {
+        "www.rad.cvm.gov.br",
+        "rad.cvm.gov.br",
+    }:
         raise ValueError("Link_Download must use an official CVM RAD HTTPS host")
     return text
 
