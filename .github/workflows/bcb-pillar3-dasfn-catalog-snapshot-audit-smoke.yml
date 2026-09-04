@@ -14,7 +14,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,7 +28,7 @@ jobs:
         run: |
           python scripts/bcb_pillar3_dasfn_catalog_snapshot_audit.py \
             --top 500 \
-            --max-pages 20 \
+            --max-pages 100 \
             --output bcb-pillar3-dasfn-catalog-snapshot-audit.json
       - name: Validate diagnostic boundary
         run: |
@@ -56,8 +56,8 @@ jobs:
               "URLDados",
           ]:
               raise SystemExit("unexpected DASFN central field selection")
-          if bounds["max_rows"] > 10000:
-              raise SystemExit("snapshot collection exceeded bounded row limit")
+          if bounds["max_rows"] > 50000:
+              raise SystemExit("snapshot collection exceeded expanded bounded row limit")
           required = {
               "BANK_EVIDENCE_NOT_POINT_IN_TIME",
               "PILLAR3_DASFN_HISTORICAL_VINTAGE_QUERY_UNPROVEN",
