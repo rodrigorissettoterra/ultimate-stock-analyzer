@@ -7,8 +7,10 @@ on:
       - ".github/workflows/historical-event-aware-m15-integration-smoke.yml"
       - "scripts/historical_event_aware_m15_integration.py"
       - "src/ultimate_stock_analyzer/backtesting/historical_event_dataset.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_event_diagnostics.py"
       - "src/ultimate_stock_analyzer/backtesting/b3_event_aware_coverage.py"
       - "src/ultimate_stock_analyzer/backtesting/b3_share_action_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_subscription_right_conversion.py"
       - "src/ultimate_stock_analyzer/backtesting/portfolio.py"
       - "src/ultimate_stock_analyzer/backtesting/returns.py"
       - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
@@ -88,7 +90,7 @@ jobs:
           if comparison["readiness_promotion_allowed"]:
               raise SystemExit("diagnostic comparison cannot promote readiness")
           if comparison["raw_asset_return"] == comparison["event_aware_asset_return"]:
-              raise SystemExit("ShareAction was not consumed by the M15 return path")
+              raise SystemExit("corporate action was not consumed by the M15 return path")
           if "DIAGNOSTIC_EVENT_AWARE_BACKTEST" not in comparison["event_aware_warnings"]:
               raise SystemExit("diagnostic M15 warning is missing")
           PY
