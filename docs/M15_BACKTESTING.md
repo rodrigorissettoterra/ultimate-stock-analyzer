@@ -1,6 +1,6 @@
 # M15 — Point-in-Time Backtesting
 
-Status: **implemented in v1.5 candidate**.
+Status: **implemented**.
 
 M15 evaluates historical portfolio decisions without allowing today's knowledge to leak into the
 past.
@@ -17,17 +17,23 @@ past.
 
 ## Corporate actions
 
-v1.5 models cash distributions and share-ratio events (splits, reverse splits and stock bonuses)
-explicitly and chronologically. Subscription rights are not silently approximated. A dataset
-requiring those events must provide a correctly adjusted series or be rejected/flagged by data
-preparation.
+M15 models cash distributions and share-ratio events (splits, reverse splits and stock bonuses)
+explicitly and chronologically. Post-M20 preparation also supports subscription rights as an
+**economic-value distribution**, using the validated B3 reference-value method when the required
+percentage, subscription price, security identity, last cum-rights session and first ex-rights
+trading session are all available. This does not assume that the investor exercised the right or
+contributed additional capital.
 
-Post-M20 historical preparation now has a dedicated event-aware dataset adapter. It preserves raw
-B3 COTAHIST, materializes empirically validated `ShareAction` and supported `CashDistribution`
-objects as separate M15 inputs, fingerprints the source bars, and is strict by default. Because the
-latest-state B3 supplement still does not prove historical event completeness, diagnostic execution
-requires an explicit non-strict opt-in and cannot promote readiness or M16 weights. See
-`POST_M20_HISTORICAL_EVENT_DATASET_M15_INTEGRATION.md`.
+The historical event-aware dataset adapter preserves raw B3 COTAHIST, materializes validated
+`ShareAction` and supported `CashDistribution` objects as separate M15 inputs, fingerprints the
+source bars and rejects incomplete/ambiguous event evidence rather than modifying raw prices.
+
+Observed-event handling and historical source completeness remain separate questions. The current
+free public B3 supplement contract does not prove an exhaustive immutable historical corporate-action
+ledger for arbitrary past `as_of` dates. Therefore diagnostic execution may validate mechanics, but
+strict execution remains blocked until source completeness is proven. Diagnostic execution cannot
+promote readiness or M16 weights. See `POST_M20_HISTORICAL_EVENT_DATASET_M15_INTEGRATION.md` and
+`POST_M20_HISTORICAL_READINESS_CORPORATE_ACTION_BRIDGE.md`.
 
 ## Portfolio model
 
@@ -41,7 +47,9 @@ The performance layer reports total return, CAGR, benchmark CAGR, annualized alp
 volatility, Sharpe, Sortino, maximum drawdown, Calmar, Information Ratio, positive-period hit rate,
 benchmark hit rate and turnover.
 
-## Not empirical optimization
+## Empirical boundary
 
-No M14 weight is changed in M15. M16 will perform walk-forward calibration using training windows
-that strictly precede their evaluation windows.
+No M14 weight is changed merely because M15 is implemented or because a diagnostic event-aware path
+works. A strict full-history run is admissible only when the bounded readiness contract accepts the
+underlying point-in-time evidence. When a public source cannot prove historical replay/completeness,
+the correct result is abstention rather than an optimistic backfill.

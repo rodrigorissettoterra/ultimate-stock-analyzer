@@ -22,21 +22,62 @@
 - **M19 Conversational Agent** — evidence-backed retrieval and optional LLM synthesis. **DONE.**
 - **M20 Production** — operational foundation, persistence, observability, container gates and runbooks. **DONE.**
 
-## Post-M20 empirical/operational gates
+## Technical completion
 
-These are validation and operations tasks rather than missing architecture milestones:
+The repository implementation is complete through M20. Post-M20 work established the historical
+evidence contracts needed to decide when strict M15/M16 execution is admissible without weakening
+point-in-time rules.
 
-- build and validate the historical evidence layer;
-  - public-data bootstrap tooling: **implemented**; actual downloaded datasets remain outside Git;
-  - fundamental/publication-timing coverage profiler: **implemented**;
-  - current B3 sector/subsector/segment enrichment and structural applicability review: **implemented/resolved for the current universe**;
-  - historical backtest readiness audit: **implemented diagnostic gate**;
-  - remaining PIT blockers must be resolved with evidence, not by relaxing backtest rules: current-only B3 sector routing, latest-state specialized history such as IFData, and unadjusted COTAHIST/corporate-action semantics;
-- materialize a sufficiently broad multi-regime local dataset after the readiness blockers above are addressed;
-- execute full M15 historical backtests only on evidence that passes strict point-in-time readiness;
-- run M16 walk-forward calibration and promote new weights only if OOS gates are met repeatedly; data readiness alone never authorizes promotion;
-- automate/schedule production collectors with source-specific monitoring and retry policies;
-- validate real PostgreSQL backup/restore drills and operational recovery objectives;
-- measure data coverage, freshness and source divergence in sustained runs;
-- document any paid data source only if a free alternative is demonstrably inadequate;
-- perform regulatory/legal review before presenting the system publicly as an investment-analysis service rather than research software.
+Resolved Post-M20 implementation work includes:
+
+- public-data bootstrap and immutable local lineage manifests;
+- fundamental/publication-timing coverage profiling;
+- historical security/universe evidence;
+- historical sector/model routing from CVM/FCA evidence, with current-B3 fallback forbidden for
+  historical decisions;
+- raw COTAHIST provenance and event-aware M15 integration;
+- validated share-action, cash-distribution and subscription-right economic-value handling;
+- bounded historical readiness auditing that preserves source-specific blockers instead of silently
+  fabricating historical evidence;
+- bank, Pillar 3, CVM/IPE and B3 source-contract audits documenting exactly what the public sources
+  do and do not prove.
+
+See [`PROJECT_COMPLETION.md`](PROJECT_COMPLETION.md) for the closure contract.
+
+## Accepted external data constraints
+
+The following are **not unfinished architecture or code milestones**. They are external evidence
+constraints that correctly keep strict empirical promotion fail-closed:
+
+- **Bank/specialized history:** the free public IFData/related BCB surfaces provide useful reference
+  periods and publication timing but do not expose a revision-aware historical replay contract for
+  arbitrary simulated `as_of` dates. `BANK_EVIDENCE_NOT_POINT_IN_TIME` therefore remains a valid
+  abstention condition.
+- **B3 corporate actions:** raw COTAHIST plus the public company-supplement surface can validate
+  observed event mechanics, but the free public contract does not prove that the observed events are
+  an exhaustive immutable historical event ledger. Historical source-completeness blockers therefore
+  remain valid.
+- **CVM/IPE revision replay:** public IPE evidence retains versions, but the open annual ZIP chain is
+  not documented as an immutable exhaustive snapshot for arbitrary past cutoffs and does not expose
+  all timing/status semantics needed to infer such a contract.
+
+These constraints must be resolved only by stronger evidence or a demonstrably better source. They
+must never be removed merely to make a backtest run.
+
+## Empirical and operational follow-up
+
+The items below are activities performed **after technical project completion** and do not reopen the
+implementation unless they expose a defect or require a material product change:
+
+- materialize broader local historical datasets when admissible PIT evidence becomes available;
+- execute strict full-history M15 runs only on datasets that pass the readiness gate;
+- run M16 walk-forward calibration and promote weights only when repeated OOS gates pass;
+- operate source collectors on the cadence chosen by the deployment environment;
+- perform measured PostgreSQL backup/restore drills and record actual RPO/RTO;
+- accumulate production freshness, availability and source-divergence history;
+- evaluate a paid data source only if a free-first alternative is demonstrably inadequate;
+- obtain regulatory/legal review before positioning the software publicly as an investment-analysis
+  service rather than research software.
+
+Until stronger empirical evidence exists, the versioned baseline model remains the research
+configuration and the system abstains where strict PIT evidence is unavailable.

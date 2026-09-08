@@ -1,6 +1,6 @@
 # M16 — Walk-Forward Calibration
 
-Status: **implemented in v1.6 candidate**.
+Status: **implemented**.
 
 M16 provides a conservative framework for testing whether small changes to M14's hypothesis
 weights improve forward ranking power out of sample.
@@ -35,8 +35,13 @@ A candidate is not automatically promoted because it wins one fold. Promotion re
 valid folds, positive mean out-of-sample improvement, a minimum fraction of positive folds and
 candidate-selection consensus. Otherwise the baseline remains the production hypothesis.
 
-## Important limitation
+## Empirical boundary
 
-M16 implements the validation/calibration mechanism; it does not claim that v1.4 weights have
-already been empirically optimized. A real promotion requires a sufficiently complete historical,
-point-in-time dataset produced by M1-M15.
+M16's validation/calibration mechanism is complete, but implementation completion is deliberately
+separate from empirical weight promotion. A real promotion requires a sufficiently complete,
+point-in-time dataset accepted by the M15/Post-M20 readiness contracts and repeated out-of-sample
+evidence satisfying the promotion gate.
+
+If external public sources cannot reconstruct the required historical evidence without revision or
+look-ahead ambiguity, no replacement weights are promoted. The versioned baseline remains the
+research configuration until stronger evidence exists.

@@ -1,100 +1,95 @@
 # Post-M20 — B3 event-aware historical coverage audit
 
-Status: **diagnostic coverage contract added; historical readiness remains blocked**.
+Status: **diagnostic coverage contract implemented; historical source completeness remains fail-closed**.
 
 ## Why this block exists
 
-The validated ShareAction conversion contract proved that selected B3 bonus, split and reverse-split
-events can remove mechanical COTAHIST discontinuities without rewriting raw prices. That does not by
-itself prove that a historical M15 return path has every corporate action required to reconstruct
-economic return.
+The validated corporate-action conversion contracts prove that selected B3 cash distributions,
+share-ratio events and subscription rights can be represented in M15 without rewriting raw
+COTAHIST. That does not by itself prove that a historical return path has every corporate action
+required to reconstruct economic return.
 
-The readiness layer currently treats every raw COTAHIST bar without `adjusted_close` as a global
-blocker. Before that rule can be narrowed, the system needs explicit evidence for two different
-questions:
+The readiness layer therefore keeps two questions separate:
 
-1. can every relevant event observed for a ticker be converted into an M15 event?
+1. can every relevant event observed for a ticker be converted into a supported M15 event?
 2. does the source prove that the observed events are the complete historical event set?
-
-This audit keeps those questions separate.
 
 ## Cash distributions
 
-The existing B3 dividend collector intentionally preserves `lastDatePrior` in
-`DividendPayment.ex_date` and marks the basis as `LAST_DATE_PRIOR_TO_EX`. For M15 that value cannot
-be passed directly as the economic EX date.
+The B3 dividend collector preserves `lastDatePrior` and the event conversion does not silently treat
+that value as the economic EX session. The diagnostic conversion:
 
-The new diagnostic conversion:
-
-- accepts B3 `assetIssued` in either observed form: ticker or security ISIN;
-- reconciles `assetIssued`, `isinCode` and the COTAHIST security identity instead of assuming the
-  field is always a ticker;
+- reconciles ticker/ISIN security identity;
 - requires the raw COTAHIST session on `lastDatePrior`;
 - resolves the first actual trading session after that date;
-- verifies B3 event ISIN against the surrounding COTAHIST identity when available;
-- requires a positive amount and an explicit `DIVIDEND` or `JCP` kind;
-- preserves `available_from` and rejects an unknown or post-EX availability timestamp for the
-  point-in-time conversion path;
-- creates `CashDistribution` on that resolved EX trading session;
-- never modifies `PriceBar.close` or sets `adjusted_close`.
+- verifies event/security identity against surrounding COTAHIST evidence when available;
+- requires a positive amount and a supported distribution kind;
+- preserves source availability semantics;
+- creates `CashDistribution` on the resolved EX trading session;
+- never modifies `PriceBar.close` or manufactures `adjusted_close`.
 
-Unsupported or unparsed relevant cash events remain blockers rather than being silently dropped.
+Unsupported or ambiguous cash events remain blockers.
 
 ## Share actions
 
-The audit reuses the already validated ShareAction conversion contract. Relevant stock events are
-scoped to the exact target security. Supported bonus, split and reverse-split events must pass the
-existing event-level COTAHIST factor and identity checks.
+Supported bonus, split and reverse-split events use the validated ShareAction conversion contract.
+Relevant events are scoped to the exact target security and must pass event-level COTAHIST factor,
+session and identity checks. Unsupported labels remain explicit blockers.
 
-Unsupported relevant stock labels remain explicit blockers.
+## Subscription rights
 
-## Subscriptions and ordering
+Post-M20 preparation supports a subscription right as an **economic-value distribution** when the
+required B3/COTAHIST evidence is available. The conversion uses the validated B3 reference-value
+method and requires, fail-closed:
 
-Subscription rights remain unsupported in M15 and therefore block observed event coverage.
+- subscription percentage;
+- subscription price;
+- security identity;
+- last cum-rights session/price;
+- first actual ex-rights trading session;
+- source/event timing needed by the conversion contract.
 
-M15 currently processes a ShareAction before a CashDistribution when both share the same EX date.
-Because that ordering can change the cash amount per original share, this audit marks any observed
-same-session share/cash combination with
-`SAME_SESSION_SHARE_AND_CASH_ORDERING_UNVERIFIED`. It does not assume the default ordering is
-economically correct.
+The resulting value is represented as a separate `CashDistribution` input for realized-return
+accounting. It does not pretend the right is a stock bonus, does not force exercise and does not
+assume an additional capital contribution by the investor. A non-economic right can validly produce
+zero distributed economic value and does not by itself validate an event-aware comparison.
+
+## Event ordering
+
+M15 processes explicit corporate-action inputs chronologically and keeps share-ratio and economic
+value events separate. Ambiguous same-session ordering must be handled by data preparation rather
+than silently inferred when contractual ordering could change economic value.
 
 ## Two readiness levels
 
-`observed_event_coverage_complete` answers only whether every relevant event visible in the current
-B3 company-supplement payload was safely handled.
+`observed_event_coverage_complete` answers whether every relevant event visible in the bounded
+current B3 company-supplement payload was safely handled.
 
-`historical_source_completeness_proven` is intentionally `false`. The current supplement endpoint is
-a latest-state company view; this project has not yet established an official historical archive or
-revision-history contract proving that the endpoint contains every event needed for an arbitrary
-past backtest window.
+`historical_source_completeness_proven` answers the stronger question required for strict historical
+replay. It remains `false`: the free public company-supplement contract has not been established as
+an exhaustive immutable historical event archive for arbitrary past cutoffs.
 
-Therefore every strict audit retains
-`B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN`, and:
+Therefore strict audits retain `B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN` and related dataset
+source-completeness blockers, while:
 
 - `strict_event_aware_backtest_ready = false`;
 - `readiness_promotion_allowed = false`;
-- `price_series_blocker_removed = false`;
 - raw B3 COTAHIST remains unchanged.
 
 ## Live evidence
 
-The smoke audits MGLU3, ITSA4, B3SA3 and AMER3 over 2024–2025. It requires:
+The dedicated event-aware smoke uses bounded real B3/COTAHIST samples to exercise multiple corporate
+action classes and verify raw-price preservation, event conversion, subscription-right handling and
+fail-closed source-completeness behavior.
 
-- the full requested COTAHIST period for every sample ticker;
-- multiple previously validated ShareAction conversions;
-- multiple exact cash-distribution conversions;
-- cash EX dates strictly after B3 `lastDatePrior`;
-- the COTAHIST year after a relevant event year when needed to resolve a year-boundary EX session;
-- the historical source-completeness blocker to remain present;
-- no price adjustment or readiness promotion.
+The historical readiness smoke separately aligns corporate-action evidence to the exact bounded
+readiness universe, date window and raw-price fingerprint before accepting it as diagnostic M15
+capability evidence. Even a fully matched diagnostic artifact cannot promote strict readiness while
+historical source completeness remains unproven.
 
-The smoke is allowed to report observed-event blockers. Its purpose is to expose them, not to hide
-them in order to force a green readiness result.
+## Closure decision
 
-## Next decision
-
-If the live artifact confirms that observed share and cash events are mechanically usable, the next
-evidence block should look for an official or otherwise defensible historical corporate-action
-source with completeness semantics. Only after historical source completeness, unsupported event
-classes and same-session ordering are resolved should
-`PRICE_SERIES_UNADJUSTED_FOR_CORPORATE_ACTIONS` be narrowed or removed for event-aware paths.
+Observed corporate-action mechanics are implemented and testable. The remaining
+`B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN` condition is an external source-contract limitation,
+not unfinished corporate-action architecture. It should be revisited only if a stronger historical
+source/completeness contract becomes available.
