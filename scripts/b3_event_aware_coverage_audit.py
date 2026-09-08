@@ -49,10 +49,7 @@ def main() -> None:
     supplement = B3DividendCollector()
     prices = B3CotahistCollector()
 
-    payloads = {
-        company: supplement.fetch_payload(company)
-        for company in samples
-    }
+    payloads = {company: supplement.fetch_payload(company) for company in samples}
 
     tickers_by_year: dict[int, set[str]] = defaultdict(set)
     for year in range(args.start_year, args.end_year + 1):
@@ -88,21 +85,13 @@ def main() -> None:
         audits.append(audit)
 
     strict_blockers = sorted(
-        {
-            blocker
-            for audit in audits
-            for blocker in audit.strict_blockers
-        }
+        {blocker for audit in audits for blocker in audit.strict_blockers}
     )
     observed_blockers = sorted(
-        {
-            blocker
-            for audit in audits
-            for blocker in audit.observed_blockers
-        }
+        {blocker for audit in audits for blocker in audit.observed_blockers}
     )
     report = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "effect": "diagnostic_only_event_aware_coverage_no_readiness_change",
         "generated_at": generated_at.isoformat(),
         "start_year": args.start_year,
@@ -141,6 +130,12 @@ def main() -> None:
         "subscription_count": sum(
             audit.relevant_subscription_count for audit in audits
         ),
+        "converted_subscription_right_count": sum(
+            audit.converted_subscription_right_count for audit in audits
+        ),
+        "blocked_subscription_right_count": sum(
+            audit.blocked_subscription_right_count for audit in audits
+        ),
         "unsupported_event_count": sum(
             audit.unsupported_event_count for audit in audits
         ),
@@ -174,6 +169,15 @@ def main() -> None:
                 ).items()
             )
         ),
+        "subscription_status_counts": dict(
+            sorted(
+                Counter(
+                    item.status
+                    for audit in audits
+                    for item in audit.subscription_conversions
+                ).items()
+            )
+        ),
         "observed_blockers": observed_blockers,
         "strict_blockers": strict_blockers,
         "historical_source_completeness_proven": False,
@@ -186,9 +190,9 @@ def main() -> None:
         "warnings": [
             "RAW_B3_COTAHIST_REMAINS_UNADJUSTED",
             "CASH_LAST_DATE_PRIOR_IS_CONVERTED_TO_FIRST_ACTUAL_EX_TRADING_SESSION",
+            "SUBSCRIPTION_RIGHTS_USE_B3_REFERENCE_VALUE_WHEN_EVIDENCE_IS_COMPLETE",
+            "UNSUPPORTED_OR_AMBIGUOUS_EVENTS_AND_UNVERIFIED_SAME_SESSION_ORDERING_FAIL_CLOSED",
             "OBSERVED_EVENT_CONVERSION_DOES_NOT_PROVE_HISTORICAL_SOURCE_COMPLETENESS",
-            "SUBSCRIPTIONS_UNSUPPORTED_STOCK_EVENTS_AND_UNVERIFIED_"
-            "SAME_SESSION_ORDERING_FAIL_CLOSED",
             "NO_READINESS_OR_BACKTEST_PROMOTION_IN_THIS_BLOCK",
         ],
     }
@@ -208,14 +212,10 @@ def _parse_samples(values: list[str]) -> dict[str, str]:
     for value in values:
         company, separator, ticker = value.partition(":")
         company = "".join(
-            character
-            for character in company.upper()
-            if character.isalnum()
+            character for character in company.upper() if character.isalnum()
         )
         ticker = "".join(
-            character
-            for character in ticker.upper()
-            if character.isalnum()
+            character for character in ticker.upper() if character.isalnum()
         )
         if separator != ":" or not company or not ticker:
             raise SystemExit(f"invalid sample {value!r}; expected COMPANY:TICKER")

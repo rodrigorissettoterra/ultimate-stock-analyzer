@@ -188,18 +188,29 @@ def materialize_historical_event_dataset(
             key=lambda item: (item.ex_date, item.ticker),
         )
     )
+    cash_distributions = tuple(
+        conversion.distribution
+        for audit in ordered_audits
+        for conversion in audit.cash_conversions
+        if (
+            conversion.converted
+            and conversion.distribution is not None
+            and start_date <= conversion.distribution.ex_date <= end_date
+        )
+    )
+    subscription_distributions = tuple(
+        conversion.distribution
+        for audit in ordered_audits
+        for conversion in audit.subscription_conversions
+        if (
+            conversion.converted
+            and conversion.distribution is not None
+            and start_date <= conversion.distribution.ex_date <= end_date
+        )
+    )
     distributions = tuple(
         sorted(
-            (
-                conversion.distribution
-                for audit in ordered_audits
-                for conversion in audit.cash_conversions
-                if (
-                    conversion.converted
-                    and conversion.distribution is not None
-                    and start_date <= conversion.distribution.ex_date <= end_date
-                )
-            ),
+            cash_distributions + subscription_distributions,
             key=lambda item: (item.ex_date, item.ticker, item.amount_per_share),
         )
     )

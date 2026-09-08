@@ -8,6 +8,8 @@ on:
       - "scripts/b3_event_aware_coverage_audit.py"
       - "src/ultimate_stock_analyzer/backtesting/b3_event_aware_coverage.py"
       - "src/ultimate_stock_analyzer/backtesting/b3_share_action_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_subscription_right_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_event_dataset.py"
       - "src/ultimate_stock_analyzer/backtesting/returns.py"
       - "src/ultimate_stock_analyzer/collectors/b3_corporate_actions.py"
       - "src/ultimate_stock_analyzer/collectors/b3_dividends.py"
@@ -50,6 +52,8 @@ jobs:
           report = json.loads(
               Path("b3-event-aware-coverage-audit.json").read_text(encoding="utf-8")
           )
+          if report["schema_version"] != "0.2":
+              raise SystemExit("unexpected coverage-audit schema version")
           expected_effect = "diagnostic_only_event_aware_coverage_no_readiness_change"
           if report["effect"] != expected_effect:
               raise SystemExit("unexpected coverage-audit effect")
@@ -64,6 +68,12 @@ jobs:
               < report["converted_cash_distribution_count"]
           ):
               raise SystemExit("cash conversion accounting is inconsistent")
+          if (
+              report["converted_subscription_right_count"]
+              + report["blocked_subscription_right_count"]
+              != report["relevant_subscription_count"]
+          ):
+              raise SystemExit("subscription conversion accounting is inconsistent")
           required = "B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN"
           if required not in report["strict_blockers"]:
               raise SystemExit("historical source-completeness blocker disappeared")
@@ -89,6 +99,20 @@ jobs:
                       raise SystemExit("converted cash event must have PIT availability")
                   if conversion["available_from"] is None:
                       raise SystemExit("converted cash event lost its availability timestamp")
+              for conversion in audit["subscription_conversions"]:
+                  if conversion["distribution"] is None:
+                      continue
+                  if conversion["ex_date"] <= conversion["com_date"]:
+                      raise SystemExit("subscription EX session must be after lastDatePrior")
+                  if not conversion["point_in_time_eligible"]:
+                      raise SystemExit("converted subscription must have PIT availability")
+                  if conversion["available_from"] is None:
+                      raise SystemExit("converted subscription lost its availability timestamp")
+                  value = conversion["value_reference_per_share"]
+                  if value is None or value < 0:
+                      raise SystemExit("subscription right value must be non-negative")
+                  if conversion["distribution"]["amount_per_share"] != value:
+                      raise SystemExit("subscription distribution lost reference value")
           PY
       - name: Publish audit evidence
         if: always()
