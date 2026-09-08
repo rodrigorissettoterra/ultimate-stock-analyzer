@@ -18,8 +18,7 @@ from ultimate_stock_analyzer.backtesting.readiness import (
     audit_historical_backtest_readiness,
 )
 from ultimate_stock_analyzer.backtesting.readiness_corporate_actions import (
-    CORPORATE_ACTION_EVIDENCE_UNIVERSE_INCOMPLETE,
-    CORPORATE_ACTION_PRICE_PROVENANCE_MISMATCH,
+    CORPORATE_ACTION_SOURCE_COMPLETENESS_UNPROVEN,
     PRICE_TREATMENT_EVENT_AWARE_M15_DIAGNOSTIC_ONLY,
     corporate_action_readiness_evidence_from_integration_report,
     integrate_corporate_action_readiness,
@@ -213,15 +212,16 @@ def main() -> None:
             raise RuntimeError(
                 "unadjusted price treatment did not expose diagnostic event-aware mode"
             )
-        if (
-            not report.corporate_action_evidence_matches_requested_universe
-            and CORPORATE_ACTION_EVIDENCE_UNIVERSE_INCOMPLETE not in report.blockers
-        ):
-            raise RuntimeError("corporate-action evidence scope mismatch was not fail-closed")
-        if report.corporate_action_evidence_matches_raw_prices:
-            raise RuntimeError("unrelated event evidence matched audited raw-price provenance")
-        if CORPORATE_ACTION_PRICE_PROVENANCE_MISMATCH not in report.blockers:
-            raise RuntimeError("raw-price provenance mismatch was not fail-closed")
+        if not report.corporate_action_evidence_matches_requested_universe:
+            raise RuntimeError("aligned corporate-action evidence did not match requested universe")
+        if not report.corporate_action_evidence_covers_requested_window:
+            raise RuntimeError("aligned corporate-action evidence did not cover requested window")
+        if not report.corporate_action_evidence_matches_raw_prices:
+            raise RuntimeError("aligned corporate-action evidence did not match raw-price provenance")
+        if report.corporate_action_historical_source_completeness_proven:
+            raise RuntimeError("latest-state B3 supplement unexpectedly proved source completeness")
+        if CORPORATE_ACTION_SOURCE_COMPLETENESS_UNPROVEN not in report.blockers:
+            raise RuntimeError("corporate-action source-completeness blocker was not preserved")
         if report.audited_raw_price_fingerprint_sha256 != audited_raw_price_fingerprint:
             raise RuntimeError("audited raw-price fingerprint was not preserved in readiness")
 
