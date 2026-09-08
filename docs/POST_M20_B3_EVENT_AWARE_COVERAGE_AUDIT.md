@@ -1,93 +1,95 @@
-# Project Completion Status
+# Post-M20 — B3 event-aware historical coverage audit
 
-## Decision
+Status: **diagnostic coverage contract implemented; historical source completeness remains fail-closed**.
 
-The **Ultimate Stock Analyzer technical implementation is complete** through M20, including the
-Post-M20 evidence/readiness contracts required to keep historical validation fail-closed.
+## Why this block exists
 
-Completion means the repository contains the intended architecture, deterministic financial logic,
-sector-aware scoring, valuation, market/risk components, point-in-time backtesting framework,
-walk-forward calibration framework, API, dashboard, evidence-grounded agent and production
-foundation, with automated tests/security gates and documented source boundaries.
+The validated corporate-action conversion contracts prove that selected B3 cash distributions,
+share-ratio events and subscription rights can be represented in M15 without rewriting raw
+COTAHIST. That does not by itself prove that a historical return path has every corporate action
+required to reconstruct economic return.
 
-It does **not** mean that external public data sources provide every historical vintage required for
-strict empirical promotion, nor that a live deployment has already accumulated months of operating
-history. Those are empirical/operational conditions outside the implementation claim.
+The readiness layer therefore keeps two questions separate:
 
-## Final fail-closed boundaries
+1. can every relevant event observed for a ticker be converted into a supported M15 event?
+2. does the source prove that the observed events are the complete historical event set?
 
-### Bank and specialized prudential evidence
+## Cash distributions
 
-Free public BCB/IFData evidence provides useful reference periods and publication timing, but the
-public contract does not provide the revision-aware historical replay required to prove which
-vintage was visible at every arbitrary simulated `as_of` date. The system therefore preserves
-`BANK_EVIDENCE_NOT_POINT_IN_TIME` and related specialized-evidence blockers where applicable.
+The B3 dividend collector preserves `lastDatePrior` and the event conversion does not silently treat
+that value as the economic EX session. The diagnostic conversion:
 
-This is a correct abstention state, not a missing implementation.
+- reconciles ticker/ISIN security identity;
+- requires the raw COTAHIST session on `lastDatePrior`;
+- resolves the first actual trading session after that date;
+- verifies event/security identity against surrounding COTAHIST evidence when available;
+- requires a positive amount and a supported distribution kind;
+- preserves source availability semantics;
+- creates `CashDistribution` on the resolved EX trading session;
+- never modifies `PriceBar.close` or manufactures `adjusted_close`.
 
-### B3 corporate actions and raw COTAHIST
+Unsupported or ambiguous cash events remain blockers.
 
-The project preserves raw COTAHIST and validates event-aware mechanics for supported share actions,
-cash distributions and subscription-right economic value. The public B3 company-supplement
-contract, however, does not prove an exhaustive immutable historical event archive for arbitrary
-past cutoffs. Strict event-aware historical readiness therefore remains blocked until stronger
-source-completeness evidence exists.
+## Share actions
 
-This is a correct abstention state, not a missing implementation.
+Supported bonus, split and reverse-split events use the validated ShareAction conversion contract.
+Relevant events are scoped to the exact target security and must pass event-level COTAHIST factor,
+session and identity checks. Unsupported labels remain explicit blockers.
 
-### CVM/IPE historical revision replay
+## Subscription rights
 
-The public IPE ecosystem exposes document versions and useful delivery evidence, but the open annual
-ZIP chain is not documented as an immutable exhaustive historical snapshot service for arbitrary
-past cutoffs and does not expose all timing/status semantics required to infer that guarantee.
-Current observations are never silently retrojected into the past.
+Post-M20 preparation supports a subscription right as an **economic-value distribution** when the
+required B3/COTAHIST evidence is available. The conversion uses the validated B3 reference-value
+method and requires, fail-closed:
 
-## What is complete
+- subscription percentage;
+- subscription price;
+- security identity;
+- last cum-rights session/price;
+- first actual ex-rights trading session;
+- source/event timing needed by the conversion contract.
 
-- M0-M20 implementation and documentation;
-- deterministic regression/unit test coverage for model contracts;
-- source lineage and point-in-time fields where the source contract supports them;
-- historical FCA model routing without current-B3 fallback;
-- bounded historical readiness auditing;
-- raw-price fingerprinting and event-aware M15 adapters;
-- strict separation between diagnostic evidence and readiness promotion;
-- conservative M16 OOS promotion gates;
-- API, dashboard and conversational-agent boundaries;
-- PostgreSQL persistence foundation, health/readiness endpoints, structured logging and runtime job
-  primitives;
-- hardened container/Compose foundation and CI image build;
-- deployment, backup/restore and incident runbooks;
-- public-repository secret/data hygiene.
+The resulting value is represented as a separate `CashDistribution` input for realized-return
+accounting. It does not pretend the right is a stock bonus, does not force exercise and does not
+assume an additional capital contribution by the investor. A non-economic right can validly produce
+zero distributed economic value and does not by itself validate an event-aware comparison.
 
-## What remains after project completion
+## Event ordering
 
-The following are **operations or empirical research**, not unfinished repository milestones:
+M15 processes explicit corporate-action inputs chronologically and keeps share-ratio and economic
+value events separate. Ambiguous same-session ordering must be handled by data preparation rather
+than silently inferred when contractual ordering could change economic value.
 
-- run collectors continuously in a chosen deployment environment;
-- accumulate freshness/availability/divergence history;
-- execute and record real backup/restore drills and measured RPO/RTO;
-- materialize broader historical datasets when admissible PIT sources exist;
-- execute strict M15 studies only after the readiness gate accepts the data;
-- execute M16 walk-forward studies and promote weights only when repeated OOS gates pass;
-- evaluate paid historical data only if free-first sources are demonstrably inadequate;
-- obtain regulatory/legal review if the project is repositioned from research software to a public
-  investment-analysis service.
+## Two readiness levels
 
-## Reopening criteria
+`observed_event_coverage_complete` answers whether every relevant event visible in the bounded
+current B3 company-supplement payload was safely handled.
 
-Technical development should be reopened only when at least one of these occurs:
+`historical_source_completeness_proven` answers the stronger question required for strict historical
+replay. It remains `false`: the free public company-supplement contract has not been established as
+an exhaustive immutable historical event archive for arbitrary past cutoffs.
 
-1. a correctness, security, auditability or production defect is found;
-2. a stronger data source becomes available and its contract justifies replacing an existing
-   fail-closed blocker;
-3. the product scope materially changes;
-4. empirical M15/M16 evidence justifies a versioned scoring-model change.
+Therefore strict audits retain `B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN` and related dataset
+source-completeness blockers, while:
 
-Lack of an external historical vintage/completeness contract by itself is not a reason to keep the
-software project permanently open.
+- `strict_event_aware_backtest_ready = false`;
+- `readiness_promotion_allowed = false`;
+- raw B3 COTAHIST remains unchanged.
 
-## Final interpretation
+## Live evidence
 
-The project is complete as **auditable research software and decision-support infrastructure**.
-Where evidence is insufficient, the implemented product is designed to say so and abstain. It must
-never manufacture historical certainty merely to produce a backtest or a promoted model.
+The dedicated event-aware smoke uses bounded real B3/COTAHIST samples to exercise multiple corporate
+action classes and verify raw-price preservation, event conversion, subscription-right handling and
+fail-closed source-completeness behavior.
+
+The historical readiness smoke separately aligns corporate-action evidence to the exact bounded
+readiness universe, date window and raw-price fingerprint before accepting it as diagnostic M15
+capability evidence. Even a fully matched diagnostic artifact cannot promote strict readiness while
+historical source completeness remains unproven.
+
+## Closure decision
+
+Observed corporate-action mechanics are implemented and testable. The remaining
+`B3_SUPPLEMENT_HISTORICAL_COMPLETENESS_UNPROVEN` condition is an external source-contract limitation,
+not unfinished corporate-action architecture. It should be revisited only if a stronger historical
+source/completeness contract becomes available.
