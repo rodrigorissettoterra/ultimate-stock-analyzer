@@ -8,7 +8,7 @@ An open, free-first and auditable research engine for Brazilian equities. It sep
 
 Deterministic Python owns financial calculations, normalization, scoring, ranking and backtesting. LLMs are optional and restricted to evidence-backed analysis/synthesis of unstructured text.
 
-> **Status:** engineering milestones **M0-M20 are implemented**. The repository now includes the integrated decision model, point-in-time backtesting, walk-forward calibration framework, API v1, responsive dashboard, evidence-grounded conversational agent and production operations foundation. This does **not** mean that a complete live B3/CVM historical dataset has already been populated or that model weights have already been empirically promoted for real-money use.
+> **Status: technical implementation complete.** Engineering milestones **M0-M20** and the Post-M20 evidence/readiness contracts are implemented. The project is complete as **auditable research software and decision-support infrastructure**. Historical point-in-time or source-completeness limitations that cannot be proven from the available public contracts remain explicit and fail-closed; they are not treated as unfinished engineering work. See [`docs/PROJECT_COMPLETION.md`](docs/PROJECT_COMPLETION.md).
 
 > This is research software, not individualized investment advice and not a promise of future returns.
 
@@ -56,6 +56,8 @@ Deterministic Python owns financial calculations, normalization, scoring, rankin
 - Publication-aware score visibility to prevent look-ahead leakage.
 - Corporate-action-aware returns, costs/slippage and benchmark comparison.
 - Walk-forward calibration framework with expanding windows, cross-sectional rank IC, baseline regularization and conservative out-of-sample promotion gates.
+- Post-M20 bounded readiness audits that keep diagnostic evidence separate from strict readiness promotion.
+- Raw COTAHIST preservation plus validated event-aware handling of supported distributions, share-ratio events and subscription-right economic value.
 
 ### Interfaces
 
@@ -76,17 +78,19 @@ Deterministic Python owns financial calculations, normalization, scoring, rankin
 - Deployment, backup/restore and incident runbooks.
 - Maintenance heartbeat/retry worker.
 
-## What is not yet claimed
+## Post-completion empirical and operational work
 
-The architecture and implementation foundation are complete through M20, but a trustworthy live investment-support system still requires operational evidence. In particular, this repository does not claim that:
+The repository implementation is complete, but production operation and empirical model promotion require evidence that cannot be manufactured by code. In particular:
 
-- the full required historical B3/CVM dataset is already loaded into PostgreSQL;
-- every public-source collector is already running unattended on a production schedule;
-- walk-forward validation has already produced statistically convincing replacement weights;
-- analyst-consensus point-in-time history is available for free at the desired depth;
-- any score guarantees future returns.
+- collectors must be run continuously in a chosen deployment environment to accumulate real freshness/availability/divergence history;
+- real backup/restore drills must be executed to measure RPO/RTO;
+- broader historical datasets should be materialized only when the required point-in-time source contracts are admissible;
+- strict M15 studies should run only after the historical readiness gate accepts the underlying evidence;
+- M16 candidate weights should be promoted only after repeated out-of-sample gates pass;
+- paid historical data should be evaluated only if free-first sources are demonstrably inadequate;
+- regulatory/legal review is required if the project is repositioned from research software to a public investment-analysis service.
 
-Until those empirical gates are satisfied, the existing model configuration remains a versioned research baseline.
+Known public-source limitations remain explicit. For example, the currently audited public contracts do not prove every historical revision/vintage required for arbitrary past `as_of` replay in specialized bank evidence, CVM/IPE revision history or the complete B3 corporate-action ledger. The correct behavior is abstention or blocked strict readiness, not optimistic backfilling.
 
 ## Quick start
 
@@ -181,6 +185,7 @@ The Git repository is **not** the financial data lake. Raw/processed datasets, c
 
 See:
 
+- [`docs/PROJECT_COMPLETION.md`](docs/PROJECT_COMPLETION.md)
 - [`DATA_SOURCES.md`](DATA_SOURCES.md)
 - [`SECURITY.md`](SECURITY.md)
 - [`DISCLAIMER.md`](DISCLAIMER.md)
