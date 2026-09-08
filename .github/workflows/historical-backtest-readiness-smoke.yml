@@ -11,8 +11,10 @@ on:
       - "src/ultimate_stock_analyzer/backtesting/readiness_corporate_actions.py"
       - "src/ultimate_stock_analyzer/backtesting/raw_price_provenance.py"
       - "src/ultimate_stock_analyzer/backtesting/historical_event_dataset.py"
+      - "src/ultimate_stock_analyzer/backtesting/historical_event_diagnostics.py"
       - "src/ultimate_stock_analyzer/backtesting/b3_event_aware_coverage.py"
       - "src/ultimate_stock_analyzer/backtesting/b3_share_action_conversion.py"
+      - "src/ultimate_stock_analyzer/backtesting/b3_subscription_right_conversion.py"
       - "src/ultimate_stock_analyzer/backtesting/portfolio.py"
       - "src/ultimate_stock_analyzer/backtesting/returns.py"
       - "src/ultimate_stock_analyzer/bootstrap/**"
@@ -29,6 +31,7 @@ on:
       - "config/backtesting/fca_model_routes_v0.2.yml"
       - "config/scoring/sector_registry_v0.6.yml"
       - "config/scoring/sectors/**"
+      - "tests/test_historical_event_aware_m15_integration.py"
       - "tests/test_historical_fundamental_coverage.py"
       - "tests/test_historical_route_readiness.py"
       - "tests/test_raw_price_provenance.py"
@@ -64,12 +67,11 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           python scripts/historical_event_aware_m15_integration.py \
-            --sample MGLU:MGLU3 \
-            --sample ITSA:ITSA4 \
-            --sample B3SA:B3SA3 \
-            --sample AMER:AMER3 \
-            --start-year 2024 \
-            --end-year 2025 \
+            --sample PETR:PETR4 \
+            --sample VALE:VALE3 \
+            --sample ITUB:ITUB4 \
+            --start-year "${{ steps.years.outputs.start }}" \
+            --end-year "${{ steps.years.outputs.end }}" \
             --output historical-event-aware-m15-integration.json
       - name: Run fail-closed historical readiness audit
         env:
